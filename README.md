@@ -1,6 +1,7 @@
 # ZigXLL
 
 A zero-boilerplate library for creating Excel XLL add-ins that provide custom functions in Zig.
+Cut to the chase, there's a [standalone repo here](https://github.com/AlexJReid/zigxll-standalone/) if you'd rather read some code. 
 
 ## Why
 
