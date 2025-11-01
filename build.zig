@@ -63,16 +63,19 @@ pub fn buildXll(
     const target = options.target;
     const optimize = options.optimize;
 
+    // Create build options to pass XLL name to framework
+    const build_options = b.addOptions();
+    build_options.addOption([]const u8, "xll_name", options.name);
+
     // Get xll dependency
     const xll_dep = b.dependency("xll", .{});
     const xll_framework = xll_dep.module("xll");
 
+    // Add build_options to framework module so it can log XLL name
+    xll_framework.addImport("build_options", build_options.createModule());
+
     // Give user module access to xll types (for ExcelFunction, etc.)
     options.user_module.addImport("xll", xll_framework);
-
-    // Create build options to pass XLL name and version to framework
-    const build_options = b.addOptions();
-    build_options.addOption([]const u8, "xll_name", options.name);
 
     // Create the XLL using framework's entry point
     const xll = b.addLibrary(.{

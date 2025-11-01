@@ -45,7 +45,7 @@ pub fn ExcelFunction(comptime meta: anytype) type {
             result = result ++ "Q";
         }
 
-        // Add $ suffix if thread-safe
+        // Add $ suffix if thread safe
         if (thread_safe) {
             result = result ++ "$";
         }
@@ -55,7 +55,7 @@ pub fn ExcelFunction(comptime meta: anytype) type {
 
     // Generate unique export name based on function name
     const export_name = comptime blk: {
-        break :blk name ++ "_impl";
+        break :blk name ++ "_impl"; // not sure if should be "more" unique
     };
 
     return struct {
