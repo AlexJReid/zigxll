@@ -1,7 +1,8 @@
 # ZigXLL
 
-A zero-boilerplate library for creating Excel XLL add-ins that provide custom functions in Zig.
-Cut to the chase, there's a [standalone repo here](https://github.com/AlexJReid/zigxll-standalone/) if you'd rather read some code. 
+A tiny library for creating Excel custom functions in Zig.
+
+There's a [standalone repo here](https://github.com/AlexJReid/zigxll-standalone/) if you'd rather read some code. 
 
 ## Why
 
@@ -9,11 +10,11 @@ This is all predicated on the possibility that someone would want to write fast 
 
 It exists because I wanted to see if it was possible to use Zig's C interop and comptime to make the Excel C SDK nicer to work with. I think it works quite nicely already, but I'd be glad of your feedback. I'm [@alexjreid](https://x.com/AlexJReid) on X.
 
-This came about as I'm working on [xllify](https://xllify.com) in C++ and Luau. I've no complaints here, other than curiousity over this would look in Zig. One day maybe the xllify will be Zig - it's too soon to tell as I'm still learning the language (it's a moving target to put it mildly) so there will be gotchas. 
+This came about as I'm working on [xllify](https://xllify.com) in C++ and Luau. I've no complaints, other than curiousity over this would look in Zig. One day maybe the xllify will be Zig - it's too soon to tell as I'm still learning the language (it's a moving target.)
 
 Claude helped a lot with the comptime stuff and the demos. Thanks, Claude.
 
-Anyway, back to this implementation. We end up with:
+Anyway, we end up with:
 
 - **C performance but not C**: Higher level. No boiler plate. Memory rules enforced.
 - **Zero boilerplate**: No need to export `xlAutoOpen`, `xlAutoClose`, etc. - the framework handles it all
@@ -24,7 +25,7 @@ Anyway, back to this implementation. We end up with:
 - **Error handling**: Zig errors automatically become `#VALUE!` in Excel
 - **comptime**: _Stuff_ happens at compile time to give the balance of concise code, without affecting runtime performance
 
-See [HOW_IT_WORKS](./HOW_IT_WORKS.md) for technical details.
+See [HOW_IT_WORKS](./HOW_IT_WORKS.md) for more details.
 
 ## Walkthrough
 
