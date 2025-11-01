@@ -20,16 +20,22 @@ pub fn build(b: *std.Build) void {
     xll_module.addIncludePath(b.path("excel/include"));
 
     // Build test XLL for framework development - simple direct build
+    const framework_build_options = b.addOptions();
+    framework_build_options.addOption([]const u8, "xll_name", "zigxll (framework test build)");
+
     const xll = b.addLibrary(.{
         .name = "zigxll",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/framework_main.zig"),
             .target = target,
             .optimize = optimize,
+            .strip = true,
         }),
         .linkage = .dynamic,
         .version = .{ .major = 1, .minor = 0, .patch = 0 },
     });
+
+    xll.root_module.addImport("build_options", framework_build_options.createModule());
 
     xll.addIncludePath(b.path("excel/include"));
     xll.addLibraryPath(b.path("excel/lib"));
@@ -64,6 +70,10 @@ pub fn buildXll(
     // Give user module access to xll types (for ExcelFunction, etc.)
     options.user_module.addImport("xll", xll_framework);
 
+    // Create build options to pass XLL name and version to framework
+    const build_options = b.addOptions();
+    build_options.addOption([]const u8, "xll_name", options.name);
+
     // Create the XLL using framework's entry point
     const xll = b.addLibrary(.{
         .name = options.name,
@@ -81,6 +91,8 @@ pub fn buildXll(
     xll.root_module.addImport("xll_framework", xll_framework);
     // Add LOCAL user module (contains function_modules tuple)
     xll.root_module.addImport("user_module", options.user_module);
+    // Add build options so framework can log XLL name
+    xll.root_module.addImport("build_options", build_options.createModule());
 
     // Add Excel SDK from xll dependency
     const excel_include = xll_dep.path("excel/include");

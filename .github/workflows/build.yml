@@ -1,0 +1,42 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Zig
+      uses: goto-bus-stop/setup-zig@v2
+      with:
+        version: 0.15.1
+
+    - name: Build framework XLL
+      run: zig build
+
+    - name: Upload framework XLL artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: zigxll-framework
+        path: zig-out/lib/output.xll
+        if-no-files-found: error
+
+    - name: Build example XLL
+      working-directory: example
+      run: zig build
+
+    - name: Upload example XLL artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: zigxll-example
+        path: example/zig-out/lib/my_excel_functions.xll
+        if-no-files-found: error

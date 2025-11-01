@@ -1,3 +1,3 @@
 pub const function_modules = .{
-    @import("text_functions.zig"),
+    @import("builtin_functions.zig"),
 };

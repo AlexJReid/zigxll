@@ -28,7 +28,7 @@ Disclaimer: I'm still learning Zig (I think most people are?) so there will be g
 
 ## Walkthrough
 
-See [example_user_project](./example_user_project) for a working example.
+> See [example](./example) for a simple working example.
 
 Add ZigXLL as a dependency in your `build.zig.zon`:
 
@@ -106,6 +106,27 @@ pub const add = ExcelFunction(.{
 
 fn addImpl(a: f64, b: f64) !f64 {
     return a + b;
+}
+
+// You can namespace functions using dots in the name
+pub const bs_call = ExcelFunction(.{
+    .name = "MyFunctions.BSCall",
+    .description = "Black-Scholes European Call Option Price",
+    .category = "Finance",
+    .params = &[_]ParamMeta{
+        .{ .name = "S", .description = "Current stock price" },
+        .{ .name = "K", .description = "Strike price" },
+        .{ .name = "T", .description = "Time to maturity (years)" },
+        .{ .name = "r", .description = "Risk-free rate" },
+        .{ .name = "sigma", .description = "Volatility" },
+    },
+    .func = blackScholesCall,
+});
+
+fn blackScholesCall(S: f64, K: f64, T: f64, r: f64, sigma: f64) !f64 {
+    if (T <= 0) return error.InvalidMaturity;
+    // ... implementation
+    return call_price;
 }
 ```
 

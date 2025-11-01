@@ -14,6 +14,8 @@ pub const function_discovery = @import("function_discovery.zig");
 const excel_allocator = std.heap.c_allocator;
 var initialized = false;
 
+const framework_version = "0.1.0";
+
 // Discover all functions from user's modules at comptime
 // Note: This expects @import("root") to have a `user_functions` declaration
 pub fn getAllFunctions() []const type {
@@ -33,7 +35,8 @@ pub fn getAllFunctions() []const type {
 
 /// Initialize XLL - auto-discover and register
 pub fn xlAutoOpen() callconv(.c) c_int {
-    xl_helpers.debugLog("zigxll: xlAutoOpen called");
+    const build_options = @import("build_options");
+    xl_helpers.debugLogFmt("zigxll v{s}: {s} loaded", .{ framework_version, build_options.xll_name });
 
     // Create arena for all registration strings - destroyed at end of this function
     var registration_arena = std.heap.ArenaAllocator.init(excel_allocator);
