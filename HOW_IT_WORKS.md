@@ -35,7 +35,7 @@ Up to 8 are permitted.
 
 **Type Conversion**
 
-The `extractArg()` and `wrapResult()` functions handle automatic conversion:
+`extractArg()` and `wrapResult()` handle conversion:
 
 - `f64` ↔ `xltypeNum`
 - `[]const u8` ↔ `xltypeStr` (UTF-8 conversion)
@@ -45,9 +45,7 @@ More types (ranges!) are coming soon. All conversions use the XLValue wrapper fo
 
 ### 2. Function Discovery (src/function_discovery.zig)
 
-The `getAllFunctions()` function uses compile-time reflection to find all Excel functions in a module.
-
-This scans all declarations, checks if they're struct types with the `is_excel_function` marker, and builds a comptime array of function types.
+`getAllFunctions()` uses comptime reflection to find Excel functions in a module. It scans declarations looking for structs with the `is_excel_function` marker and builds a comptime array of them.
 
 ### 3. XLL Builder (src/xll_builder.zig)
 
@@ -70,17 +68,15 @@ This takes the zig defined metadata and calls Excel's `xlfRegister` function for
 
 ### 5. Build Helper (build.zig)
 
-The `buildXll()` function is what users call in their `build.zig`.
-
-This is the magic that lets users write minimal build.zig files - all the complexity is handled here.
+`buildXll()` is called from user's `build.zig` and handles all the wiring. This is why user build files stay minimal.
 
 ### 6. XLValue Wrapper (src/xlvalue.zig)
 
-XLValue provides a type-safe interface to Excel's XLOPER12.
+XLValue wraps XLOPER12 with type safety.
 
 **Memory Management**
 
-XLValue tracks whether it owns memory via `m_owns_memory`. When Excel calls `xlAutoFree12()`, the framework deallocates any owned memory. Excel memory ownership rules are very strict. Time will tell if we've got this right, but it's a part of the library that will be continually reviewed and improved.
+XLValue tracks whether it owns memory via `m_owns_memory`. When Excel calls `xlAutoFree12()`, the framework deallocates any owned memory. Excel memory ownership rules are strict - time will tell if this is right.
 
 **UTF-8 Conversion**
 

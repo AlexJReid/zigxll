@@ -12,7 +12,7 @@ All approaches have their pros and cons.
 
 Anyway, back to Zig. I wanted to see if it was possible to use Zig's C interop and comptime to make the Excel C SDK nicer to work with. Turns out it is.
 
-What do you get?
+We end up with:
 
 - **C performance but not C**: Higher level. No boiler plate. Memory rules enforced.
 - **Zero boilerplate**: No need to export `xlAutoOpen`, `xlAutoClose`, etc. - the framework handles it all
@@ -76,16 +76,15 @@ pub fn build(b: *std.Build) void {
 }
 ```
 
-Create `src/main.zig` - just list your function modules:
+`src/main.zig` lists your function modules:
 
 ```zig
-// List all modules containing Excel functions
 pub const function_modules = .{
     @import("my_functions.zig"),
 };
 ```
 
-Create `src/my_functions.zig` - define your Excel functions:
+`src/my_functions.zig` defines your Excel functions:
 
 ```zig
 const std = @import("std");
@@ -130,13 +129,13 @@ fn blackScholesCall(S: f64, K: f64, T: f64, r: f64, sigma: f64) !f64 {
 }
 ```
 
-Build and run:
+Build:
 
 ```bash
 zig build
 ```
 
-Your XLL will be in `zig-out/lib/my_functions.xll`. Double click it and Excel will load it.
+The XLL lands in `zig-out/lib/my_functions.xll`. Double click to load in Excel.
 
 ## Supported types
 
@@ -150,8 +149,7 @@ Your XLL will be in `zig-out/lib/my_functions.xll`. Double click it and Excel wi
 - `[]const u8` / `[]u8` - Strings (automatically freed by Excel)
 - `*XLOPER12` - Raw Excel values (advanced)
 
-All functions return `!T` (a zig error union) - errors automatically become `#VALUE!` in Excel.
-Support for more types, namely ranges, is next on the list.
+Functions return `!T` - errors become `#VALUE!` in Excel. Support for ranges is next.
 
 ## Available options for `ExcelFunction`
 
@@ -169,10 +167,23 @@ pub const myFunc = ExcelFunction(.{
 });
 ```
 
-## Improving this contraption
+## Dependencies
+
+This library uses the **Microsoft Excel 2013 XLL SDK** headers and libraries. These are included in the `excel/` directory and are required to build Excel add-ins.
+
+- **Download**: https://www.microsoft.com/en-gb/download/details.aspx?id=35567
+- **Files used**: `xlcall.h`, `FRAMEWRK.H`, `xlcall32.lib`, `frmwrk32.lib`
+
+By using this software you agree to the EULA specified by Microsoft in the above download.
+
+## Working on the framework
 
 You can also clone this repo to improve the framework directly:
 
 1. Edit `src/user_functions.zig` or create new modules
 2. Run `zig build`
 3. Your XLL is in `zig-out/lib/output.xll`
+
+## License
+
+[MIT](./LICENSE)
