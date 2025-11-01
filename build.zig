@@ -47,6 +47,23 @@ pub fn build(b: *std.Build) void {
 
     const install_xll = b.addInstallFile(xll.getEmittedBin(), "lib/output.xll");
     b.getInstallStep().dependOn(&install_xll.step);
+
+    // Add test step
+    const tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/xlvalue.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    tests.addIncludePath(b.path("excel/include"));
+    tests.linkLibC();
+
+    const run_tests = b.addRunArtifact(tests);
+    run_tests.has_side_effects = true; // Always run, show output
+
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&run_tests.step);
 }
 
 /// Helper function for users to create their own XLL

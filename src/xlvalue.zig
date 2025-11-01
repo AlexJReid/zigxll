@@ -212,16 +212,16 @@ pub const XLValue = struct {
         return result;
     }
 
-    /// Extract UTF-8 string from Excel's wide string XLOPER12
-    /// Excel stores strings as: first u16 = length, rest = wide chars
-    /// Returns allocated UTF-8 string that caller must free
+    // Extract UTF-8 string from Excel's wide string XLOPER12
+    // Excel stores strings as: first u16 = length, rest = wide chars
+    // Returns allocated UTF-8 string that caller must free
     pub fn as_utf8str(self: *const XLValue) ![]u8 {
         if (!self.is_str()) return error.NotAString;
 
         const len = self.m_val.val.str[0];
         const wide_slice = self.m_val.val.str[1 .. len + 1];
 
-        // Allocate buffer (worst case: each UTF-16 char becomes 3 UTF-8 bytes)
+        // Allocate buffer *3
         const buf = try self.allocator.alloc(u8, len * 3);
         errdefer self.allocator.free(buf);
 
@@ -305,6 +305,9 @@ pub fn format(
     }
 }
 
+// The tests that follow have been proposed by Claude, they need sense checking of course.
+// Note that the testing allocator used will complain if there are suspected leaks.
+
 test "XLValue basic types" {
     const allocator = std.testing.allocator;
 
@@ -343,4 +346,149 @@ test "XLValue matrix operations" {
     const num = try cell.as_double();
 
     try std.testing.expectEqual(@as(f64, 2.0), num);
+}
+
+test "XLValue UTF-8 string round-trip" {
+    const allocator = std.testing.allocator;
+
+    // Test ASCII string
+    {
+        var val = try XLValue.fromUtf8String(allocator, "Hello");
+        defer val.deinit();
+
+        try std.testing.expect(val.is_str());
+        const str = try val.as_utf8str();
+        defer allocator.free(str);
+
+        try std.testing.expectEqualStrings("Hello", str);
+    }
+
+    // Test empty string
+    {
+        var val = try XLValue.fromUtf8String(allocator, "");
+        defer val.deinit();
+
+        try std.testing.expect(val.is_str());
+        const str = try val.as_utf8str();
+        defer allocator.free(str);
+
+        try std.testing.expectEqualStrings("", str);
+    }
+
+    // Test Unicode string (emoji, non-ASCII)
+    {
+        var val = try XLValue.fromUtf8String(allocator, "Hello 世界 🚀");
+        defer val.deinit();
+
+        try std.testing.expect(val.is_str());
+        const str = try val.as_utf8str();
+        defer allocator.free(str);
+
+        try std.testing.expectEqualStrings("Hello 世界 🚀", str);
+    }
+}
+
+test "XLValue UTF-8 string length calculation" {
+    const allocator = std.testing.allocator;
+
+    // ASCII: 1 byte per char
+    {
+        var val = try XLValue.fromUtf8String(allocator, "ABC");
+        defer val.deinit();
+
+        // Length should be stored in first wchar_t
+        try std.testing.expectEqual(@as(u16, 3), val.m_val.val.str[0]);
+    }
+
+    // Multi-byte UTF-8 -> fewer UTF-16 code units
+    {
+        var val = try XLValue.fromUtf8String(allocator, "世界");
+        defer val.deinit();
+
+        // "世界" is 2 characters in UTF-16
+        try std.testing.expectEqual(@as(u16, 2), val.m_val.val.str[0]);
+    }
+}
+
+test "XLValue error types" {
+    const allocator = std.testing.allocator;
+
+    var val = XLValue.err(allocator, xl.xlerrValue);
+    defer val.deinit();
+
+    try std.testing.expect(val.is_err());
+    try std.testing.expectEqual(@as(c_int, xl.xlerrValue), val.m_val.val.err);
+}
+
+test "XLValue type checking" {
+    const allocator = std.testing.allocator;
+
+    var num_val = XLValue.fromDouble(allocator, 42.0);
+    defer num_val.deinit();
+
+    // Should succeed
+    _ = try num_val.as_double();
+
+    // Should fail with type error
+    try std.testing.expectError(error.NotAString, num_val.as_utf8str());
+    try std.testing.expectError(error.NotABoolean, num_val.as_bool());
+}
+
+test "XLValue memory ownership" {
+    const allocator = std.testing.allocator;
+
+    // Numbers don't own memory
+    {
+        var val = XLValue.fromDouble(allocator, 123.0);
+        defer val.deinit();
+        try std.testing.expect(!val.m_owns_memory);
+    }
+
+    // Strings own memory
+    {
+        var val = try XLValue.fromUtf8String(allocator, "test");
+        defer val.deinit();
+        try std.testing.expect(val.m_owns_memory);
+    }
+
+    // There is no spoon?
+    {
+        var val = try XLValue.fromMatrix(allocator, &.{
+            &.{ 1.0, 2.0 },
+        });
+        defer val.deinit();
+        try std.testing.expect(val.m_owns_memory);
+    }
+
+    // Errors don't own memory
+    {
+        var val = XLValue.err(allocator, xl.xlerrValue);
+        defer val.deinit();
+        try std.testing.expect(!val.m_owns_memory);
+    }
+}
+
+test "XLValue int conversion" {
+    const allocator = std.testing.allocator;
+
+    var val = XLValue.fromInt(allocator, 42);
+    defer val.deinit();
+
+    try std.testing.expect(val.is_num());
+    try std.testing.expectEqual(@as(f64, 42.0), try val.as_double());
+    try std.testing.expectEqual(@as(i32, 42), try val.as_int());
+}
+
+test "XLValue missing and nil types" {
+    const allocator = std.testing.allocator;
+
+    var missing_val = XLValue.missing(allocator);
+    defer missing_val.deinit();
+    try std.testing.expect(missing_val.is_missing());
+
+    // Nil is different from missing in Excel
+    var nil_val = XLValue.init(allocator);
+    nil_val.m_val.xltype = xl.xltypeNil;
+    defer nil_val.deinit();
+    try std.testing.expect(nil_val.is_nil());
 }
