@@ -8,9 +8,9 @@ This is all predicated on the possibility that someone would want to write fast 
 
 It exists because I wanted to see if it was possible to use Zig's C interop and comptime to make the Excel C SDK nicer to work with. I think it works quite nicely already, but I'd be glad of your feedback. I'm [@alexjreid](https://x.com/AlexJReid) on X.
 
-This came about as I'm working on [xllify](https://xllify.com) in C++ and Luau. I've no complaints here, other than curiousity over how a simple Zig framework would look. So I figured I'd just push the little Zig port here.
+This came about as I'm working on [xllify](https://xllify.com) in C++ and Luau. I've no complaints here, other than curiousity over this would look in Zig. One day maybe the xllify will be Zig - it's too soon to tell as I'm still learning the language (it's a moving target to put it mildly) so there will be gotchas. 
 
->Disclaimer: I'm still learning Zig (it's a moving target to put it mildly) so there will be gotchas. Claude helped a lot with the comptime stuff. Thanks, Claude.
+Claude helped a lot with the comptime stuff and the demos. Thanks, Claude.
 
 Anyway, back to this implementation. We end up with:
 
@@ -24,7 +24,6 @@ Anyway, back to this implementation. We end up with:
 - **comptime**: _Stuff_ happens at compile time to give the balance of concise code, without affecting runtime performance
 
 See [HOW_IT_WORKS](./HOW_IT_WORKS.md) for technical details.
-
 
 ## Walkthrough
 
