@@ -1,0 +1,10 @@
+.zig-cache
+dist_example
+zig-out
+packager/src
+packager/excel
+.claude
+output.xll
+.ziggy*
+*.xll
+.DS_Store

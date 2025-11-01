@@ -1,0 +1,23 @@
+.{
+    .name = .my_excel_functions,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.15.1",
+    .fingerprint = 0x2cf9360d66192df2,
+
+    .dependencies = .{
+        .xll = .{
+            // When published, users would use:
+            // .url = "https://github.com/yourname/zigxll/archive/refs/tags/v0.1.0.tar.gz",
+            // .hash = "1220...",
+
+            // For local development:
+            .path = "..",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

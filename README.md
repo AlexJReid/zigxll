@@ -1,0 +1,157 @@
+# ZigXLL
+
+A zero-boilerplate library for creating Excel XLL add-ins that provide custom functions in Zig.
+
+## Why
+
+Fair point. This is predicated on the possibility that someone would want to write fast functions for Excel in Zig. So that makes it very niche. 
+
+Extending Excel through custom functions can be tackled in a multitude of ways ranging from VBA, C#, COM and offerings like the excellent Excel-DNA, PyXLL and xlwings (Python). If you want raw performance you can try your hand at the ancient C SDK. 
+
+All approaches have their pros and cons.
+
+Anyway, back to Zig. I wanted to see if it was possible to use Zig's C interop and comptime to make the Excel C SDK nicer to work with. Turns out it is.
+
+What do you get?
+
+- **C performance but not C**: Higher level. No boiler plate. Memory rules enforced.
+- **Zero boilerplate**: No need to export `xlAutoOpen`, `xlAutoClose`, etc. - the framework handles it all
+- **Automatic discovery**: Just add an `ExcelFunction()` and reference your function
+- **Type safety**: Zig types automatically convert to/from Excel values (support for ranges soon)
+- **Thread-safe by default**: Functions marked thread-safe automatically for MTR
+- **UTF-8 strings**: Write Zig code with normal `[]u8` strings, framework handles UTF-16 conversion
+- **Error handling**: Zig errors automatically become `#VALUE!` in Excel
+- **comptime**: _Stuff_ happens at compile time to give the balance of concise code, without affecting runtime performance
+
+See [HOW_IT_WORKS](./HOW_IT_WORKS.md) for technical details.
+Disclaimer: I'm still learning Zig (I think most people are?) so there will be gotchas. Zig changes a lot. Claude helped a lot with the comptime stuff.
+
+## Walkthrough
+
+See [example_user_project](./example_user_project) for a working example.
+
+Add ZigXLL as a dependency in your `build.zig.zon`:
+
+```zig
+.dependencies = .{
+    .xll = .{
+        .url = "https://github.com/alexjreid/zigxll/archive/refs/tags/v0.1.0.tar.gz",
+        .hash = "...",
+    },
+},
+```
+
+Create your `build.zig`:
+
+```zig
+const std = @import("std");
+
+pub fn build(b: *std.Build) void {
+    const target = b.resolveTargetQuery(.{
+        .cpu_arch = .x86_64,
+        .os_tag = .windows,
+        .abi = .msvc,
+    });
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSmall });
+
+    // Create a module for your functions
+    const user_module = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .strip = true,
+    });
+
+    // Build the XLL using the framework helper
+    const xll_build = @import("xll");
+    const xll = xll_build.buildXll(b, .{
+        .name = "my_functions",
+        .user_module = user_module,
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const install_xll = b.addInstallFile(xll.getEmittedBin(), "lib/my_functions.xll");
+    b.getInstallStep().dependOn(&install_xll.step);
+}
+```
+
+Create `src/main.zig` - just list your function modules:
+
+```zig
+// List all modules containing Excel functions
+pub const function_modules = .{
+    @import("my_functions.zig"),
+};
+```
+
+Create `src/my_functions.zig` - define your Excel functions:
+
+```zig
+const std = @import("std");
+const xll = @import("xll");
+const ExcelFunction = xll.ExcelFunction;
+const ParamMeta = xll.ParamMeta;
+
+pub const add = ExcelFunction(.{
+    .name = "add",
+    .description = "Add two numbers",
+    .category = "Zig Math",
+    .params = &[_]ParamMeta{
+        .{ .name = "a", .description = "First number" },
+        .{ .name = "b", .description = "Second number" },
+    },
+    .func = addImpl,
+});
+
+fn addImpl(a: f64, b: f64) !f64 {
+    return a + b;
+}
+```
+
+Build and run:
+
+```bash
+zig build
+```
+
+Your XLL will be in `zig-out/lib/my_functions.xll`. Double click it and Excel will load it.
+
+## Supported types
+
+**Parameters:**
+- `f64` - Numbers
+- `[]const u8` - Strings (UTF-8)
+- `*XLOPER12` - Raw Excel values (advanced)
+
+**Return types:**
+- `f64` - Numbers
+- `[]const u8` / `[]u8` - Strings (automatically freed by Excel)
+- `*XLOPER12` - Raw Excel values (advanced)
+
+All functions return `!T` (a zig error union) - errors automatically become `#VALUE!` in Excel.
+Support for more types, namely ranges, is next on the list.
+
+## Available options for `ExcelFunction`
+
+```zig
+pub const myFunc = ExcelFunction(.{
+    .name = "myFunc",
+    .description = "My function",
+    .category = "MyCategory",
+    .params = &[_]ParamMeta{
+        .{ .name = "x", .description = "Parameter help text" },
+        .{ .description = "Name is optional" },
+    },
+    .func = myFuncImpl,
+    .thread_safe = true, // Default is true
+});
+```
+
+## Improving this contraption
+
+You can also clone this repo to improve the framework directly:
+
+1. Edit `src/user_functions.zig` or create new modules
+2. Run `zig build`
+3. Your XLL is in `zig-out/lib/output.xll`
