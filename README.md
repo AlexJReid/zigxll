@@ -10,7 +10,7 @@ This is all predicated on the possibility that someone would want to write funct
 
 It exists because I wanted to see if it was possible to use Zig's C interop and comptime to make the Excel C SDK nicer to work with. I think it works quite nicely already, but I'd be glad of your feedback. I'm [@alexjreid](https://x.com/AlexJReid) on X.
 
-This came about as I'm working on [xllify](https://xllify.com) in C++ and Luau. I've no complaints, other than curiousity over this would look in Zig. One day maybe the xllify will be Zig - it's too soon to tell as I'm still learning the language (it's a moving target.)
+This came about as I'm working on [xllify](https://xllify.com) in C++ and Luau. I've no complaints, other than curiousity over this would look in Zig. One day maybe xllify will be Zig - it's too soon to tell as I'm still learning the language (it's a moving target.)
 
 Claude helped a lot with the comptime stuff and the demos. Thanks, Claude.
 
