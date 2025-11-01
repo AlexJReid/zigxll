@@ -6,7 +6,7 @@ There's a [standalone repo here](https://github.com/AlexJReid/zigxll-standalone/
 
 ## Why
 
-This is all predicated on the possibility that someone would want to write fast functions for Excel in Zig. So that makes it very niche. 
+This is all predicated on the possibility that someone would want to write functions for Excel in Zig. So that makes it very niche. 
 
 It exists because I wanted to see if it was possible to use Zig's C interop and comptime to make the Excel C SDK nicer to work with. I think it works quite nicely already, but I'd be glad of your feedback. I'm [@alexjreid](https://x.com/AlexJReid) on X.
 
