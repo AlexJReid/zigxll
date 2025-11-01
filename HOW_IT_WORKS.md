@@ -1,6 +1,6 @@
 # How ZigXLL Works
 
-Way too much technical rambling about how this all works.
+Some technical rambling about how this all works.
 
 ## Overview
 

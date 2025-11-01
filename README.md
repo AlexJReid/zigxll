@@ -4,15 +4,15 @@ A zero-boilerplate library for creating Excel XLL add-ins that provide custom fu
 
 ## Why
 
-Fair point. This is predicated on the possibility that someone would want to write fast functions for Excel in Zig. So that makes it very niche. 
+This is all predicated on the possibility that someone would want to write fast functions for Excel in Zig. So that makes it very niche. 
 
-Extending Excel through custom functions can be tackled in a multitude of ways ranging from VBA, C#, COM and offerings like the excellent Excel-DNA, PyXLL and xlwings (Python). If you want raw performance you can try your hand at the ancient C SDK. 
+It exists because I wanted to see if it was possible to use Zig's C interop and comptime to make the Excel C SDK nicer to work with. I think it works quite nicely already, but I'd be glad of your feedback. I'm [@alexjreid](https://x.com/AlexJReid) on X.
 
-All approaches have their pros and cons.
+This came about as I'm working on [xllify](https://xllify.com) in C++ and Luau. I've no complaints here, other than curiousity over how a simple Zig framework would look. So I figured I'd just push the little Zig port here.
 
-Anyway, back to Zig. I wanted to see if it was possible to use Zig's C interop and comptime to make the Excel C SDK nicer to work with. Turns out it is.
+>Disclaimer: I'm still learning Zig (it's a moving target to put it mildly) so there will be gotchas. Claude helped a lot with the comptime stuff. Thanks, Claude.
 
-We end up with:
+Anyway, back to this implementation. We end up with:
 
 - **C performance but not C**: Higher level. No boiler plate. Memory rules enforced.
 - **Zero boilerplate**: No need to export `xlAutoOpen`, `xlAutoClose`, etc. - the framework handles it all
@@ -24,7 +24,7 @@ We end up with:
 - **comptime**: _Stuff_ happens at compile time to give the balance of concise code, without affecting runtime performance
 
 See [HOW_IT_WORKS](./HOW_IT_WORKS.md) for technical details.
-Disclaimer: I'm still learning Zig (I think most people are?) so there will be gotchas. Zig changes a lot. Claude helped a lot with the comptime stuff.
+
 
 ## Walkthrough
 
