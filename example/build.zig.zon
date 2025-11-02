@@ -6,10 +6,9 @@
 
     .dependencies = .{
         .xll = .{
-            // When published, users would use:
-            // .url = "https://github.com/yourname/zigxll/archive/refs/tags/v0.1.0.tar.gz",
-            // .hash = "1220...",
-
+            // When using a published release:
+            // .url = "https://github.com/alexjreid/zigxll/archive/refs/tags/v0.1.0.tar.gz",
+            // .hash = "xll-0.1.0-rzwxcRVkBAABjpooKWZMWYtv4fy4WLbm5hJnllgZPtdg",
             // For local development:
             .path = "..",
         },
