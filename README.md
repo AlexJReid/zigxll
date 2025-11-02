@@ -1,6 +1,6 @@
 # ZigXLL
 
-A tiny library for creating Excel custom functions in Zig.
+A Zig package for creating Excel custom functions.
 
 There's a [standalone repo here](https://github.com/AlexJReid/zigxll-standalone/) if you'd rather read some code. 
 
@@ -10,22 +10,22 @@ This is all predicated on the possibility that someone would want to write funct
 
 It exists because I wanted to see if it was possible to use Zig's C interop and comptime to make the Excel C SDK nicer to work with. I think it works quite nicely already, but I'd be glad of your feedback. I'm [@alexjreid](https://x.com/AlexJReid) on X.
 
-This came about as I'm working on [xllify](https://xllify.com) in C++ and Luau. I've no complaints, other than curiousity over this would look in Zig. One day maybe xllify will be Zig - it's too soon to tell as I'm still learning the language (it's a moving target.)
+This came about as I'm working on [xllify](https://xllify.com) in C++ and Luau. I have no complaints, other than curiosity over how this would look in Zig. One day maybe xllify will be Zig - it's too soon to tell as I'm still learning the language (it's a moving target.)
 
 Claude helped a lot with the comptime stuff and the demos. Thanks, Claude.
 
 Anyway, we end up with:
 
-- **C performance but not C**: Higher level. No boiler plate. Memory rules enforced.
+- **C performance but not C**: Higher level. No boilerplate. Memory rules enforced.
 - **Zero boilerplate**: No need to export `xlAutoOpen`, `xlAutoClose`, etc. - the framework handles it all
 - **Automatic discovery**: Just add an `ExcelFunction()` and reference your function
 - **Type safety**: Zig types automatically convert to/from Excel values (support for ranges soon)
 - **Thread-safe by default**: Functions marked thread-safe automatically for MTR
 - **UTF-8 strings**: Write Zig code with normal `[]u8` strings, framework handles UTF-16 conversion
 - **Error handling**: Zig errors automatically become `#VALUE!` in Excel
-- **comptime**: _Stuff_ happens at compile time to give the balance of concise code, without affecting runtime performance
+- **comptime**: Compilation-time code generation balances conciseness without affecting runtime performance
 
-See [HOW_IT_WORKS](./HOW_IT_WORKS.md) for more details.
+See [how it works](./HOW_IT_WORKS.md) for more details.
 
 ## Walkthrough
 
