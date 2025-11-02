@@ -92,24 +92,40 @@ fn registerFunction(comptime FuncType: type, xll_path: *xl.XLOPER12, allocator: 
     var description_xl = try XLValue.fromUtf8String(allocator, FuncType.excel_description);
     var empty_xl = try XLValue.fromUtf8String(allocator, "");
 
-    // Call xlfRegister
+    // Build argument help descriptions
+    const param_count = FuncType.excel_params.len;
+    var arg_help: [8]XLValue = undefined; // Max 8 params
+    inline for (0..param_count) |i| {
+        const desc = FuncType.excel_params[i].description orelse "";
+        arg_help[i] = try XLValue.fromUtf8String(allocator, desc);
+    }
+
+    // Build args array for Excel12v
+    var args: [18]?*xl.XLOPER12 = undefined;
+    args[0] = xll_path;
+    args[1] = &proc_name_xl.m_val;
+    args[2] = &type_string_xl.m_val;
+    args[3] = &func_name_xl.m_val;
+    args[4] = &arg_names_xl.m_val;
+    args[5] = &func_type_xl.m_val;
+    args[6] = &category_xl.m_val;
+    args[7] = &empty_xl.m_val; // Shortcut
+    args[8] = &empty_xl.m_val; // Help topic
+    args[9] = &description_xl.m_val; // Function description
+
+    // Add argument descriptions
+    inline for (0..param_count) |i| {
+        args[10 + i] = &arg_help[i].m_val;
+    }
+    // Fill remaining slots with null (won't be used)
+    inline for (param_count..8) |i| {
+        args[10 + i] = null;
+    }
+
+    // Call xlfRegister using Excel12v
     var result: xl.XLOPER12 = undefined;
-    const ret = xl.Excel12f(
-        xl.xlfRegister,
-        &result,
-        11,
-        xll_path,
-        &proc_name_xl.m_val,
-        &type_string_xl.m_val,
-        &func_name_xl.m_val,
-        &arg_names_xl.m_val,
-        &func_type_xl.m_val,
-        &category_xl.m_val,
-        &empty_xl.m_val, // Shortcut
-        &empty_xl.m_val, // Help topic
-        &description_xl.m_val, // Description
-        &empty_xl.m_val, // arg
-    );
+    const arg_count = 10 + param_count;
+    const ret = xl.Excel12v(xl.xlfRegister, &result, @intCast(arg_count), &args);
     defer xl_helpers.xlFree(&result);
 
     if (ret != xl.xlretSuccess) {

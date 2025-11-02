@@ -10,7 +10,7 @@ const allocator = std.heap.c_allocator;
 /// Parameter metadata for Excel function arguments
 pub const ParamMeta = struct {
     name: ?[]const u8 = null,
-    description: []const u8,
+    description: ?[]const u8 = null,
 };
 
 pub fn ExcelFunction(comptime meta: anytype) type {

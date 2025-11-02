@@ -13,10 +13,11 @@ pub const double = ExcelFunction(.{
     .params = &[_]ParamMeta{
         .{ .name = "x", .description = "Number to double" },
         .{ .name = "y", .description = "Number to add" },
+        .{ .name = "z", .description = "Number to take off" },
     },
     .func = doubleFunc,
 });
 
-fn doubleFunc(x: f64, y: f64) !f64 {
-    return x * 2 + y;
+fn doubleFunc(x: f64, y: f64, z: f64) !f64 {
+    return x * 2 + y - z;
 }
