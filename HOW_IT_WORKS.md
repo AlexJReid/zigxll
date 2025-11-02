@@ -13,7 +13,7 @@ The user never writes any Excel boilerplate. The framework's `buildXll()` build 
 3. The builder exports all Excel entry points (`xlAutoOpen`, etc.)
 4. The builder discovers and registers user functions at compile time
 
-## Core Components
+## Core
 
 ### 1. ExcelFunction Wrapper (src/excel_function.zig)
 
@@ -23,7 +23,7 @@ The `ExcelFunction()` function is a compile-time code generator that takes funct
 - An `impl` function with the exact signature Excel expects
 - Type conversion logic between Zig types and XLOPER12
 
-**Exact Signature Generation**
+**Arity**
 
 The switch statement on `params.len` generates the exact number of parameters needed:
 
@@ -33,7 +33,7 @@ The switch statement on `params.len` generates the exact number of parameters ne
 
 Up to 8 are permitted.
 
-**Type Conversion**
+**Type conversion**
 
 `extractArg()` and `wrapResult()` handle conversion:
 
@@ -41,13 +41,13 @@ Up to 8 are permitted.
 - `[]const u8` ↔ `xltypeStr` (UTF-8 conversion)
 - `*XLOPER12` ↔ raw passthrough
 
-More types (ranges!) are coming soon. All conversions use the XLValue wrapper for safety.
+More types (ranges) are coming soon. All conversions use the XLValue wrapper for safety.
 
-### 2. Function Discovery (src/function_discovery.zig)
+### 2. Function discovery (src/function_discovery.zig)
 
 `getAllFunctions()` uses comptime reflection to find Excel functions in a module. It scans declarations looking for structs with the `is_excel_function` marker and builds a comptime array of them.
 
-### 3. XLL Builder (src/xll_builder.zig)
+### 3. Hook up to Excel (src/xll_builder.zig)
 
 The XLL builder is the root source file for all generated XLLs. It:
 
@@ -60,15 +60,15 @@ The user never sees or edits this file. It just hooks up the framework to Excel'
 
 ### 4. Framework Entry (src/framework_entry.zig)
 
-**Compile-Time Function Collection**
+**Function discovery**
 
 This runs at compile time to build the complete list of functions. It accesses `@import("root")` which is the `xll_builder.zig`, which exposes the user's modules.
 
 This takes the zig defined metadata and calls Excel's `xlfRegister` function for n functions. Again this is mostly code generated at compile time.
 
-### 5. Build Helper (build.zig)
+### 5. Build helper (build.zig)
 
-`buildXll()` is called from user's `build.zig` and handles all the wiring. This is why user build files stay minimal.
+`buildXll()` is called from user's `build.zig` and handles all the wiring. This is how user build files stay minimal.
 
 ### 6. XLValue Wrapper (src/xlvalue.zig)
 
@@ -85,9 +85,9 @@ Excel uses UTF-16 wide strings. XLValue handles conversion:
 - `fromUtf8String()`: UTF-8 → UTF-16 (allocates)
 - `as_utf8str()`: UTF-16 → UTF-8 (allocates)
 
-Note: the naming of these fns will be fixed!
+Note: the naming of these fns will be fixed.
 
-## Sequence
+## Flow
 
 ### Execution of the ADD function in Excel
 
@@ -131,11 +131,9 @@ Note: the naming of these fns will be fixed!
 
 7. At runtime, `xlAutoOpen()` registers each discovered function with Excel
 
-Nice and simple.
+## Performance
 
-## Performance traits
-
-**Compile Time**
+**Compile time**
 - Function discovery
 - Wrapper generation
 - All metadata computed at compile time (no runtime overhead)
@@ -146,7 +144,7 @@ Nice and simple.
 - Memory allocation: Only for strings and returned values
 - Registration: One-time cost at XLL load (although you can safely load the XLL again without restarting Excel)
 
-## Limitations
+## Caveats
 
 - Maximum 8 parameters per function (Excel limitation is 255, but framework currently supports 0-8)
 - Supported types: f64, []const u8, *XLOPER12 - ranges are the big omission
