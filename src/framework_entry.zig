@@ -72,8 +72,21 @@ fn registerFunction(comptime FuncType: type, xll_path: *xl.XLOPER12, allocator: 
     var type_string_xl = try XLValue.fromUtf8String(allocator, FuncType.excel_type_string);
     var func_name_xl = try XLValue.fromUtf8String(allocator, FuncType.excel_name);
 
-    // TODO: Build argument names from FuncType.excel_params
-    var arg_names_xl = try XLValue.fromUtf8String(allocator, "");
+    // Build argument names from FuncType.excel_params
+    const arg_names_str = comptime blk: {
+        var result: []const u8 = "";
+        for (FuncType.excel_params, 0..) |param, i| {
+            if (i > 0) result = result ++ ",";
+            if (param.name) |name| {
+                result = result ++ name;
+            } else {
+                // Default to arg1, arg2, arg3, etc.
+                result = result ++ "arg" ++ std.fmt.comptimePrint("{d}", .{i + 1});
+            }
+        }
+        break :blk result;
+    };
+    var arg_names_xl = try XLValue.fromUtf8String(allocator, arg_names_str);
     var func_type_xl = try XLValue.fromUtf8String(allocator, "1"); // 1 = normal function
     var category_xl = try XLValue.fromUtf8String(allocator, FuncType.excel_category);
     var description_xl = try XLValue.fromUtf8String(allocator, FuncType.excel_description);

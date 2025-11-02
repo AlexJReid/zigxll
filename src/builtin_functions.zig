@@ -12,10 +12,11 @@ pub const double = ExcelFunction(.{
     .category = "Zig Functions",
     .params = &[_]ParamMeta{
         .{ .name = "x", .description = "Number to double" },
+        .{ .name = "y", .description = "Number to add" },
     },
     .func = doubleFunc,
 });
 
-fn doubleFunc(x: f64) !f64 {
-    return x * 2;
+fn doubleFunc(x: f64, y: f64) !f64 {
+    return x * 2 + y;
 }
