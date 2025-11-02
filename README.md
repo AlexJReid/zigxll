@@ -36,7 +36,7 @@ Add ZigXLL as a dependency in your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .xll = .{
-        .url = "https://github.com/alexjreid/zigxll/archive/refs/tags/v0.1.0.tar.gz",
+        .url = "https://github.com/alexjreid/zigxll/archive/refs/tags/v0.2.0.tar.gz",
         .hash = "...",
     },
 },
