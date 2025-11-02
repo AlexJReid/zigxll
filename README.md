@@ -142,15 +142,19 @@ The XLL lands in `zig-out/lib/my_functions.xll`. Double click to load in Excel.
 
 **Parameters:**
 - `f64` - Numbers
+- `bool` - Booleans (TRUE/FALSE)
 - `[]const u8` - Strings (UTF-8)
+- `[][]const f64` - 2D arrays/ranges of numbers
 - `*XLOPER12` - Raw Excel values (advanced)
 
 **Return types:**
 - `f64` - Numbers
+- `bool` - Booleans (TRUE/FALSE)
 - `[]const u8` / `[]u8` - Strings (automatically freed by Excel)
+- `[][]const f64` / `[][]f64` - 2D arrays/ranges of numbers (automatically freed by Excel)
 - `*XLOPER12` - Raw Excel values (advanced)
 
-Functions return `!T` - errors become `#VALUE!` in Excel. Support for ranges is next.
+Functions return `!T` - errors become `#VALUE!` in Excel.
 
 ## Available options for `ExcelFunction`
 

@@ -37,11 +37,13 @@ Up to 8 are permitted.
 
 `extractArg()` and `wrapResult()` handle conversion:
 
-- `f64` ↔ `xltypeNum`
-- `[]const u8` ↔ `xltypeStr` (UTF-8 conversion)
-- `*XLOPER12` ↔ raw passthrough
+- `f64` ↔ `xltypeNum` (numbers)
+- `bool` ↔ `xltypeBool` (TRUE/FALSE)
+- `[]const u8` ↔ `xltypeStr` (strings with UTF-8 conversion)
+- `[][]const f64` ↔ `xltypeMulti` (2D arrays/ranges of numbers)
+- `*XLOPER12` ↔ raw passthrough (advanced usage)
 
-More types (ranges) are coming soon. All conversions use the XLValue wrapper for safety.
+All conversions use the XLValue wrapper for safety.
 
 ### 2. Function discovery (src/function_discovery.zig)
 
@@ -147,7 +149,7 @@ Note: the naming of these fns will be fixed.
 ## Caveats
 
 - Maximum 8 parameters per function (Excel limitation is 255, but framework currently supports 0-8)
-- Supported types: f64, []const u8, *XLOPER12 - ranges are the big omission
+- Supported types: f64, bool, []const u8, [][]const f64, *XLOPER12
 - Windows x86_64 only, which makes sense as XLLs can only run on Windows
 - Requires Zig 0.15.1 or later
 
