@@ -14,7 +14,7 @@ pub const function_discovery = @import("function_discovery.zig");
 const excel_allocator = std.heap.c_allocator;
 var initialized = false;
 
-const framework_version = "0.2.0";
+const framework_version = "0.2.4";
 
 // Discover all functions from user's modules at comptime
 // Note: This expects @import("root") to have a `user_functions` declaration
