@@ -165,12 +165,21 @@ pub const myFunc = ExcelFunction(.{
     .category = "MyCategory",
     .params = &[_]ParamMeta{
         .{ .name = "x", .description = "Parameter help text" },
+        .{ .name = "y", .description = "Optional parameter (default 10)" },
         .{ .description = "Name is optional" },
     },
     .func = myFuncImpl,
     .thread_safe = true, // Default is true
 });
+
+// Function with optional parameter
+fn myFuncImpl(x: f64, y: ?f64, z: f64) !f64 {
+    const y_val = y orelse 10.0; // Use default if not provided
+    return x + y_val + z;
+}
 ```
+
+**Optional parameters**: Use `?T` types (like `?f64`, `?bool`) for optional parameters. When Excel passes a missing value, it becomes `null`. Use the `orelse` operator to provide default values in your implementation.
 
 ## Dependencies
 

@@ -26,19 +26,23 @@ fn doubleFunc(x: f64, y: f64, z: f64) !f64 {
 
 pub const zigmatrix = ExcelFunction(.{
     .name = "ZigMatrix",
-    .description = "Returns a matrix filled with sequential numbers (max 100x100)",
+    .description = "Returns a matrix filled with sequential numbers (default 10x5, max 100x100)",
     .category = "Zig Functions",
     .params = &[_]ParamMeta{
-        .{ .name = "rows", .description = "Number of rows (max 100)" },
-        .{ .name = "cols", .description = "Number of columns (max 100)" },
+        .{ .name = "rows", .description = "Number of rows (optional, default 10, max 100)" },
+        .{ .name = "cols", .description = "Number of columns (optional, default 5, max 100)" },
     },
     .func = zigMatrixFunc,
 });
 
-fn zigMatrixFunc(rows_param: f64, cols_param: f64) ![][]f64 {
+fn zigMatrixFunc(rows_param: ?f64, cols_param: ?f64) ![][]f64 {
+    // Use defaults if not provided
+    const rows_value = rows_param orelse 10.0;
+    const cols_value = cols_param orelse 5.0;
+
     // Convert and validate parameters
-    const rows_input = @as(i32, @intFromFloat(rows_param));
-    const cols_input = @as(i32, @intFromFloat(cols_param));
+    const rows_input = @as(i32, @intFromFloat(rows_value));
+    const cols_input = @as(i32, @intFromFloat(cols_value));
 
     // Clamp to max 100, minimum 1
     const rows = @min(@max(rows_input, 1), 100);
@@ -86,4 +90,20 @@ pub const not = ExcelFunction(.{
 
 fn notFunc(value: bool) !bool {
     return !value;
+}
+
+pub const power = ExcelFunction(.{
+    .name = "ZigPower",
+    .description = "Raises a number to a power (default exponent is 2)",
+    .category = "Zig Functions",
+    .params = &[_]ParamMeta{
+        .{ .name = "base", .description = "Base number" },
+        .{ .name = "exponent", .description = "Exponent (optional, default 2)" },
+    },
+    .func = powerFunc,
+});
+
+fn powerFunc(base: f64, exponent: ?f64) !f64 {
+    const exp = exponent orelse 2.0;
+    return std.math.pow(f64, base, exp);
 }
