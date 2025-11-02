@@ -143,7 +143,6 @@ pub fn xlAutoClose() callconv(.c) c_int {
 pub fn xlAutoFree12(pxFree: ?*xl.XLOPER12) callconv(.c) void {
     if (pxFree) |oper| {
         // Only free if xlbitDLLFree is set (means we allocated it)
-        xl_helpers.debugLog("xlAutoFree12 called");
 
         if ((oper.xltype & xl.xlbitDLLFree) != 0) {
             // Free string data if present
