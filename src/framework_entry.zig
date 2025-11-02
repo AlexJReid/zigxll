@@ -100,8 +100,9 @@ fn registerFunction(comptime FuncType: type, xll_path: *xl.XLOPER12, allocator: 
         arg_help[i] = try XLValue.fromUtf8String(allocator, desc);
     }
 
-    // Build args array for Excel12v
-    var args: [18]?*xl.XLOPER12 = undefined;
+    // Build args array for Excel12v (only the ones we need)
+    const arg_count = 10 + param_count + 1; // +1 for dummy trailing arg
+    var args: [19][*c]xl.XLOPER12 = undefined;
     args[0] = xll_path;
     args[1] = &proc_name_xl.m_val;
     args[2] = &type_string_xl.m_val;
@@ -117,15 +118,13 @@ fn registerFunction(comptime FuncType: type, xll_path: *xl.XLOPER12, allocator: 
     inline for (0..param_count) |i| {
         args[10 + i] = &arg_help[i].m_val;
     }
-    // Fill remaining slots with null (won't be used)
-    inline for (param_count..8) |i| {
-        args[10 + i] = null;
-    }
+
+    // Add dummy trailing empty string to prevent truncation
+    args[10 + param_count] = &empty_xl.m_val;
 
     // Call xlfRegister using Excel12v
     var result: xl.XLOPER12 = undefined;
-    const arg_count = 10 + param_count;
-    const ret = xl.Excel12v(xl.xlfRegister, &result, @intCast(arg_count), &args);
+    const ret = xl.Excel12v(xl.xlfRegister, &result, @intCast(arg_count), @ptrCast(&args));
     defer xl_helpers.xlFree(&result);
 
     if (ret != xl.xlretSuccess) {
@@ -144,6 +143,8 @@ pub fn xlAutoClose() callconv(.c) c_int {
 pub fn xlAutoFree12(pxFree: ?*xl.XLOPER12) callconv(.c) void {
     if (pxFree) |oper| {
         // Only free if xlbitDLLFree is set (means we allocated it)
+        xl_helpers.debugLog("xlAutoFree12 called");
+
         if ((oper.xltype & xl.xlbitDLLFree) != 0) {
             // Free string data if present
             if ((oper.xltype & xl.xltypeStr) != 0) {
