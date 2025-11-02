@@ -255,13 +255,14 @@ pub const XLValue = struct {
 
     // Extract multi array as 2D array of f64
     // Caller must free the returned array and each row
-    pub fn as_matrix(self: *const XLValue) ![][]f64 {
+    // Note: Empty/nil cells are converted to 0.0
+    pub fn as_matrix(self: *const XLValue) ![][]const f64 {
         if (!self.is_multi()) return error.NotAMatrix;
 
         const num_rows = self.rows();
         const num_cols = self.columns();
 
-        var result = try self.allocator.alloc([]f64, num_rows);
+        var result = try self.allocator.alloc([]const f64, num_rows);
         errdefer {
             for (result, 0..) |row, i| {
                 if (i > 0) self.allocator.free(row);
@@ -270,13 +271,28 @@ pub const XLValue = struct {
         }
 
         for (0..num_rows) |r| {
-            result[r] = try self.allocator.alloc(f64, num_cols);
-            errdefer if (r > 0) self.allocator.free(result[r]);
+            var row = try self.allocator.alloc(f64, num_cols);
+            errdefer if (r > 0) self.allocator.free(row);
 
             for (0..num_cols) |c| {
                 const cell = try self.get_cell(r, c);
-                result[r][c] = try cell.as_double();
+
+                // Handle different cell types - skip nil/missing/error cells
+                if (cell.is_num()) {
+                    row[c] = try cell.as_double();
+                } else if (cell.is_nil() or cell.is_missing()) {
+                    // Empty cells become 0.0
+                    row[c] = 0.0;
+                } else if (cell.is_err()) {
+                    // Error cells become 0.0 (could alternatively propagate the error)
+                    row[c] = 0.0;
+                } else {
+                    // Other types (string, bool) - try to convert or default to 0
+                    row[c] = cell.as_double() catch 0.0;
+                }
             }
+
+            result[r] = row;
         }
 
         return result;

@@ -7,15 +7,13 @@ const ParamMeta = excel_function.ParamMeta;
 const allocator = std.heap.c_allocator;
 
 pub const double = ExcelFunction(.{
-    .name = "zigxll.Double",
-    .description = "Nonsense",
+    .name = "ZigDouble",
+    .description = "Example function: doubles x, adds y, subtracts z",
     .category = "Zig Functions",
     .params = &[_]ParamMeta{
         .{ .name = "x", .description = "Number to double" },
         .{ .name = "y", .description = "Number to add" },
-        .{
-            .name = "z",
-        },
+        .{ .name = "z", .description = "Number to subtract" },
     },
     .func = doubleFunc,
 });
@@ -106,4 +104,24 @@ pub const power = ExcelFunction(.{
 fn powerFunc(base: f64, exponent: ?f64) !f64 {
     const exp = exponent orelse 2.0;
     return std.math.pow(f64, base, exp);
+}
+
+pub const sumrange = ExcelFunction(.{
+    .name = "ZigSumRange",
+    .description = "Sums all values in a range or 2D array",
+    .category = "Zig Functions",
+    .params = &[_]ParamMeta{
+        .{ .name = "data", .description = "Range or array of numbers to sum" },
+    },
+    .func = sumRangeFunc,
+});
+
+fn sumRangeFunc(data: [][]const f64) !f64 {
+    var total: f64 = 0;
+    for (data) |row| {
+        for (row) |val| {
+            total += val;
+        }
+    }
+    return total;
 }

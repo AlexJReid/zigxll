@@ -40,8 +40,10 @@ Up to 8 are permitted.
 - `f64` ↔ `xltypeNum` (numbers)
 - `bool` ↔ `xltypeBool` (TRUE/FALSE)
 - `[]const u8` ↔ `xltypeStr` (strings with UTF-8 conversion)
-- `[][]const f64` ↔ `xltypeMulti` (2D arrays/ranges of numbers)
+- `[][]const f64` ↔ `xltypeMulti` (2D arrays/ranges of numbers, empty cells → 0.0)
 - `*XLOPER12` ↔ raw passthrough (advanced usage)
+
+**Optional parameters:** Optional types (`?f64`, `?bool`, etc.) detect `xltypeMissing` and return `null`.
 
 All conversions use the XLValue wrapper for safety.
 
