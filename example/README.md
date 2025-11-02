@@ -14,3 +14,5 @@ Output: `zig-out/lib/my_excel_functions.xll`
 
 - `double(x)` - Doubles a number
 - `reverse(text)` - Reverses a string
+- `ZigXLLExample.BS_CALL(S, K, T, r, sigma)` - Black-Scholes call option price
+- `ZigXLLExample.BS_PUT(S, K, T, r, sigma)` - Black-Scholes put option price

@@ -8,12 +8,14 @@ const allocator = std.heap.c_allocator;
 
 pub const double = ExcelFunction(.{
     .name = "zigxll.Double",
-    .description = "Double a number",
+    .description = "Nonsense",
     .category = "Zig Functions",
     .params = &[_]ParamMeta{
         .{ .name = "x", .description = "Number to double" },
         .{ .name = "y", .description = "Number to add" },
-        .{ .name = "z", .description = "Number to take off" },
+        .{
+            .name = "z",
+        },
     },
     .func = doubleFunc,
 });
