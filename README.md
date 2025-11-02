@@ -2,7 +2,7 @@
 
 A Zig package for creating Excel custom functions.
 
-There's a [standalone repo here](https://github.com/AlexJReid/zigxll-standalone/) if you'd rather read some code. 
+There's a [standalone repo here](https://github.com/AlexJReid/zigxll-standalone/) which can be used as a template.
 
 ## Why
 
