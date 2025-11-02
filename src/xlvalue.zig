@@ -253,6 +253,35 @@ pub const XLValue = struct {
         return XLValue.fromXLOPER12(self.allocator, cell, false);
     }
 
+    // Extract multi array as 2D array of f64
+    // Caller must free the returned array and each row
+    pub fn as_matrix(self: *const XLValue) ![][]f64 {
+        if (!self.is_multi()) return error.NotAMatrix;
+
+        const num_rows = self.rows();
+        const num_cols = self.columns();
+
+        var result = try self.allocator.alloc([]f64, num_rows);
+        errdefer {
+            for (result, 0..) |row, i| {
+                if (i > 0) self.allocator.free(row);
+            }
+            self.allocator.free(result);
+        }
+
+        for (0..num_rows) |r| {
+            result[r] = try self.allocator.alloc(f64, num_cols);
+            errdefer if (r > 0) self.allocator.free(result[r]);
+
+            for (0..num_cols) |c| {
+                const cell = try self.get_cell(r, c);
+                result[r][c] = try cell.as_double();
+            }
+        }
+
+        return result;
+    }
+
     // Raw pointer access
     pub fn get(self: *XLValue) *xl.XLOPER12 {
         return &self.m_val;
@@ -491,4 +520,306 @@ test "XLValue missing and nil types" {
     nil_val.m_val.xltype = xl.xltypeNil;
     defer nil_val.deinit();
     try std.testing.expect(nil_val.is_nil());
+}
+
+test "XLValue matrix round-trip with as_matrix" {
+    const allocator = std.testing.allocator;
+
+    // Create a matrix from 2D array
+    const input_data = &[_][]const f64{
+        &.{ 1.0, 2.0, 3.0 },
+        &.{ 4.0, 5.0, 6.0 },
+        &.{ 7.0, 8.0, 9.0 },
+    };
+
+    var matrix = try XLValue.fromMatrix(allocator, input_data);
+    defer matrix.deinit();
+
+    try std.testing.expect(matrix.is_multi());
+    try std.testing.expectEqual(@as(usize, 3), matrix.rows());
+    try std.testing.expectEqual(@as(usize, 3), matrix.columns());
+
+    // Extract it back as a 2D array
+    const result = try matrix.as_matrix();
+    defer {
+        for (result) |row| {
+            allocator.free(row);
+        }
+        allocator.free(result);
+    }
+
+    // Verify dimensions
+    try std.testing.expectEqual(@as(usize, 3), result.len);
+    try std.testing.expectEqual(@as(usize, 3), result[0].len);
+
+    // Verify all values match
+    try std.testing.expectEqual(@as(f64, 1.0), result[0][0]);
+    try std.testing.expectEqual(@as(f64, 2.0), result[0][1]);
+    try std.testing.expectEqual(@as(f64, 3.0), result[0][2]);
+    try std.testing.expectEqual(@as(f64, 4.0), result[1][0]);
+    try std.testing.expectEqual(@as(f64, 5.0), result[1][1]);
+    try std.testing.expectEqual(@as(f64, 6.0), result[1][2]);
+    try std.testing.expectEqual(@as(f64, 7.0), result[2][0]);
+    try std.testing.expectEqual(@as(f64, 8.0), result[2][1]);
+    try std.testing.expectEqual(@as(f64, 9.0), result[2][2]);
+}
+
+test "XLValue as_matrix edge cases" {
+    const allocator = std.testing.allocator;
+
+    // Test single cell (1x1 matrix)
+    {
+        var matrix = try XLValue.fromMatrix(allocator, &.{
+            &.{42.0},
+        });
+        defer matrix.deinit();
+
+        const result = try matrix.as_matrix();
+        defer {
+            for (result) |row| {
+                allocator.free(row);
+            }
+            allocator.free(result);
+        }
+
+        try std.testing.expectEqual(@as(usize, 1), result.len);
+        try std.testing.expectEqual(@as(usize, 1), result[0].len);
+        try std.testing.expectEqual(@as(f64, 42.0), result[0][0]);
+    }
+
+    // Test single row
+    {
+        var matrix = try XLValue.fromMatrix(allocator, &.{
+            &.{ 1.0, 2.0, 3.0, 4.0 },
+        });
+        defer matrix.deinit();
+
+        const result = try matrix.as_matrix();
+        defer {
+            for (result) |row| {
+                allocator.free(row);
+            }
+            allocator.free(result);
+        }
+
+        try std.testing.expectEqual(@as(usize, 1), result.len);
+        try std.testing.expectEqual(@as(usize, 4), result[0].len);
+        try std.testing.expectEqual(@as(f64, 1.0), result[0][0]);
+        try std.testing.expectEqual(@as(f64, 4.0), result[0][3]);
+    }
+
+    // Test single column
+    {
+        var matrix = try XLValue.fromMatrix(allocator, &.{
+            &.{1.0},
+            &.{2.0},
+            &.{3.0},
+        });
+        defer matrix.deinit();
+
+        const result = try matrix.as_matrix();
+        defer {
+            for (result) |row| {
+                allocator.free(row);
+            }
+            allocator.free(result);
+        }
+
+        try std.testing.expectEqual(@as(usize, 3), result.len);
+        try std.testing.expectEqual(@as(usize, 1), result[0].len);
+        try std.testing.expectEqual(@as(f64, 1.0), result[0][0]);
+        try std.testing.expectEqual(@as(f64, 2.0), result[1][0]);
+        try std.testing.expectEqual(@as(f64, 3.0), result[2][0]);
+    }
+
+    // Test error on non-matrix type
+    {
+        var num_val = XLValue.fromDouble(allocator, 42.0);
+        defer num_val.deinit();
+
+        try std.testing.expectError(error.NotAMatrix, num_val.as_matrix());
+    }
+}
+
+test "XLOPER12 round-trip for numeric type" {
+    const allocator = std.testing.allocator;
+
+    // Create XLValue from number
+    var val1 = XLValue.fromDouble(allocator, 123.456);
+    defer val1.deinit();
+
+    // Get raw XLOPER12
+    const xloper = val1.m_val;
+
+    // Verify XLOPER12 structure directly
+    try std.testing.expectEqual(@as(@TypeOf(xloper.xltype), xl.xltypeNum), xloper.xltype);
+    try std.testing.expectEqual(@as(f64, 123.456), xloper.val.num);
+
+    // Create new XLValue from XLOPER12
+    const val2 = XLValue.fromXLOPER12(allocator, xloper, false);
+
+    // Extract and verify
+    try std.testing.expect(val2.is_num());
+    try std.testing.expectEqual(@as(f64, 123.456), try val2.as_double());
+}
+
+test "XLOPER12 round-trip for boolean type" {
+    const allocator = std.testing.allocator;
+
+    // Test true
+    {
+        var val1 = XLValue.fromBool(allocator, true);
+        defer val1.deinit();
+
+        const xloper = val1.m_val;
+        try std.testing.expectEqual(@as(@TypeOf(xloper.xltype), xl.xltypeBool), xloper.xltype);
+        try std.testing.expectEqual(@as(c_int, 1), xloper.val.xbool);
+
+        const val2 = XLValue.fromXLOPER12(allocator, xloper, false);
+        try std.testing.expect(val2.is_bool());
+        try std.testing.expectEqual(true, try val2.as_bool());
+    }
+
+    // Test false
+    {
+        var val1 = XLValue.fromBool(allocator, false);
+        defer val1.deinit();
+
+        const xloper = val1.m_val;
+        try std.testing.expectEqual(@as(@TypeOf(xloper.xltype), xl.xltypeBool), xloper.xltype);
+        try std.testing.expectEqual(@as(c_int, 0), xloper.val.xbool);
+
+        const val2 = XLValue.fromXLOPER12(allocator, xloper, false);
+        try std.testing.expect(val2.is_bool());
+        try std.testing.expectEqual(false, try val2.as_bool());
+    }
+}
+
+test "XLOPER12 round-trip for string type" {
+    const allocator = std.testing.allocator;
+
+    // Create XLValue from UTF-8 string
+    var val1 = try XLValue.fromUtf8String(allocator, "Hello Excel!");
+    defer val1.deinit();
+
+    // Get raw XLOPER12
+    const xloper = val1.m_val;
+
+    // Verify XLOPER12 structure
+    try std.testing.expectEqual(@as(@TypeOf(xloper.xltype), xl.xltypeStr), xloper.xltype);
+    try std.testing.expectEqual(@as(u16, 12), xloper.val.str[0]); // Length
+
+    // Create new XLValue from XLOPER12 (not taking ownership)
+    const val2 = XLValue.fromXLOPER12(allocator, xloper, false);
+
+    // Extract and verify
+    try std.testing.expect(val2.is_str());
+    const str = try val2.as_utf8str();
+    defer allocator.free(str);
+    try std.testing.expectEqualStrings("Hello Excel!", str);
+}
+
+test "XLOPER12 round-trip for multi/matrix type" {
+    const allocator = std.testing.allocator;
+
+    // Create XLValue from matrix
+    const input_data = &[_][]const f64{
+        &.{ 1.0, 2.0 },
+        &.{ 3.0, 4.0 },
+    };
+    var val1 = try XLValue.fromMatrix(allocator, input_data);
+    defer val1.deinit();
+
+    // Get raw XLOPER12
+    const xloper = val1.m_val;
+
+    // Verify XLOPER12 structure
+    try std.testing.expectEqual(@as(@TypeOf(xloper.xltype), xl.xltypeMulti), xloper.xltype);
+    try std.testing.expectEqual(@as(i32, 2), xloper.val.array.rows);
+    try std.testing.expectEqual(@as(i32, 2), xloper.val.array.columns);
+
+    // Verify individual cells in the raw array
+    try std.testing.expectEqual(@as(@TypeOf(xloper.val.array.lparray[0].xltype), xl.xltypeNum), xloper.val.array.lparray[0].xltype);
+    try std.testing.expectEqual(@as(f64, 1.0), xloper.val.array.lparray[0].val.num);
+    try std.testing.expectEqual(@as(f64, 2.0), xloper.val.array.lparray[1].val.num);
+    try std.testing.expectEqual(@as(f64, 3.0), xloper.val.array.lparray[2].val.num);
+    try std.testing.expectEqual(@as(f64, 4.0), xloper.val.array.lparray[3].val.num);
+
+    // Create new XLValue from XLOPER12 (not taking ownership)
+    const val2 = XLValue.fromXLOPER12(allocator, xloper, false);
+
+    // Verify type and dimensions
+    try std.testing.expect(val2.is_multi());
+    try std.testing.expectEqual(@as(usize, 2), val2.rows());
+    try std.testing.expectEqual(@as(usize, 2), val2.columns());
+
+    // Extract as matrix and verify values
+    const result = try val2.as_matrix();
+    defer {
+        for (result) |row| {
+            allocator.free(row);
+        }
+        allocator.free(result);
+    }
+
+    try std.testing.expectEqual(@as(f64, 1.0), result[0][0]);
+    try std.testing.expectEqual(@as(f64, 2.0), result[0][1]);
+    try std.testing.expectEqual(@as(f64, 3.0), result[1][0]);
+    try std.testing.expectEqual(@as(f64, 4.0), result[1][1]);
+}
+
+test "XLOPER12 round-trip for error type" {
+    const allocator = std.testing.allocator;
+
+    // Test various error codes
+    const error_codes = [_]c_int{
+        xl.xlerrNull,
+        xl.xlerrDiv0,
+        xl.xlerrValue,
+        xl.xlerrRef,
+        xl.xlerrName,
+        xl.xlerrNum,
+        xl.xlerrNA,
+    };
+
+    for (error_codes) |err_code| {
+        var val1 = XLValue.err(allocator, err_code);
+        defer val1.deinit();
+
+        const xloper = val1.m_val;
+        try std.testing.expectEqual(@as(@TypeOf(xloper.xltype), xl.xltypeErr), xloper.xltype);
+        try std.testing.expectEqual(err_code, xloper.val.err);
+
+        const val2 = XLValue.fromXLOPER12(allocator, xloper, false);
+        try std.testing.expect(val2.is_err());
+    }
+}
+
+test "XLOPER12 round-trip for missing and nil types" {
+    const allocator = std.testing.allocator;
+
+    // Test missing type
+    {
+        var val1 = XLValue.missing(allocator);
+        defer val1.deinit();
+
+        const xloper = val1.m_val;
+        try std.testing.expectEqual(@as(@TypeOf(xloper.xltype), xl.xltypeMissing), xloper.xltype);
+
+        const val2 = XLValue.fromXLOPER12(allocator, xloper, false);
+        try std.testing.expect(val2.is_missing());
+    }
+
+    // Test nil type
+    {
+        var val1 = XLValue.init(allocator);
+        val1.m_val.xltype = xl.xltypeNil;
+        defer val1.deinit();
+
+        const xloper = val1.m_val;
+        try std.testing.expectEqual(@as(@TypeOf(xloper.xltype), xl.xltypeNil), xloper.xltype);
+
+        const val2 = XLValue.fromXLOPER12(allocator, xloper, false);
+        try std.testing.expect(val2.is_nil());
+    }
 }

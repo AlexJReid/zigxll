@@ -213,8 +213,12 @@ pub fn ExcelFunction(comptime meta: anytype) type {
             // Handle different types
             if (T == f64) {
                 return try val.as_double();
+            } else if (T == bool) {
+                return try val.as_bool();
             } else if (T == []const u8) {
                 return try val.as_utf8str();
+            } else if (T == [][]const f64) {
+                return try val.as_matrix();
             } else if (T == *xl.XLOPER12) {
                 return xloper;
             } else {
@@ -225,6 +229,11 @@ pub fn ExcelFunction(comptime meta: anytype) type {
         fn freeArg(comptime T: type, arg: T) void {
             if (T == []const u8) {
                 allocator.free(arg);
+            } else if (T == [][]const f64) {
+                for (arg) |row| {
+                    allocator.free(row);
+                }
+                allocator.free(arg);
             }
         }
 
@@ -233,6 +242,18 @@ pub fn ExcelFunction(comptime meta: anytype) type {
             if (T == f64) {
                 const val = XLValue.fromDouble(allocator, result);
                 // Allocate XLOPER12 on heap so Excel can access it after function returns
+                const ret_ptr = allocator.create(xl.XLOPER12) catch {
+                    const err_val = XLValue.err(allocator, xl.xlerrValue);
+                    const err_ptr = allocator.create(xl.XLOPER12) catch unreachable;
+                    err_ptr.* = err_val.m_val;
+                    err_ptr.xltype |= xl.xlbitDLLFree;
+                    return err_ptr;
+                };
+                ret_ptr.* = val.m_val;
+                ret_ptr.xltype |= xl.xlbitDLLFree;
+                return ret_ptr;
+            } else if (T == bool) {
+                const val = XLValue.fromBool(allocator, result);
                 const ret_ptr = allocator.create(xl.XLOPER12) catch {
                     const err_val = XLValue.err(allocator, xl.xlerrValue);
                     const err_ptr = allocator.create(xl.XLOPER12) catch unreachable;
@@ -253,6 +274,30 @@ pub fn ExcelFunction(comptime meta: anytype) type {
                     return err_ptr;
                 };
                 // Allocate XLOPER12 on heap so Excel can access it after function returns
+                const ret_ptr = allocator.create(xl.XLOPER12) catch {
+                    const err_val = XLValue.err(allocator, xl.xlerrValue);
+                    const err_ptr = allocator.create(xl.XLOPER12) catch unreachable;
+                    err_ptr.* = err_val.m_val;
+                    err_ptr.xltype |= xl.xlbitDLLFree;
+                    return err_ptr;
+                };
+                ret_ptr.* = val.m_val;
+                ret_ptr.xltype |= xl.xlbitDLLFree;
+                return ret_ptr;
+            } else if (T == [][]const f64 or T == [][]f64) {
+                defer {
+                    for (result) |row| {
+                        allocator.free(row);
+                    }
+                    allocator.free(result);
+                }
+                const val = XLValue.fromMatrix(allocator, result) catch {
+                    const err_val = XLValue.err(allocator, xl.xlerrValue);
+                    const err_ptr = allocator.create(xl.XLOPER12) catch unreachable;
+                    err_ptr.* = err_val.m_val;
+                    err_ptr.xltype |= xl.xlbitDLLFree;
+                    return err_ptr;
+                };
                 const ret_ptr = allocator.create(xl.XLOPER12) catch {
                     const err_val = XLValue.err(allocator, xl.xlerrValue);
                     const err_ptr = allocator.create(xl.XLOPER12) catch unreachable;
