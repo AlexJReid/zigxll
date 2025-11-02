@@ -18,3 +18,5 @@ If you download an artifact from this repo you will need to unzip the file and u
 - `reverse(text)` - Reverses a string
 - `ZigXLLExample.BS_CALL(S, K, T, r, sigma)` - Black-Scholes call option price
 - `ZigXLLExample.BS_PUT(S, K, T, r, sigma)` - Black-Scholes put option price
+
+BS_CALL and BS_PUT are exercised in the .xlsm sheet in this directory, showing performance with 1000 input rows. As both call and put are calculated this is 2000 calculations. Add some more if you want! On a *very* basic PC (AMD Ryzen 5500U) I see this complete in  ~4-6ms.
