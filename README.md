@@ -6,7 +6,7 @@ There's a [standalone repo here](https://github.com/AlexJReid/zigxll-standalone/
 
 ## Why
 
-This exists because I wanted to see if it was possible to use Zig's C interop and comptime to make the Excel C SDK nicer to work with. Even at this early stage, it works quite nicely, but I'd be glad of your feedback. I'm [@alexjreid](https://x.com/AlexJReid) on X or of course open an issue.
+This exists because I wanted to see if it was possible to use Zig's C interop and comptime to make the Excel C SDK nicer to work with.
 
 This came about as I'm working on [xllify](https://xllify.com) in C++ and Luau. I have no complaints, other than curiosity over how this would look in Zig. One day maybe xllify will be Zig - it's too soon to tell as I'm still learning the language (it's a moving target.)
 
