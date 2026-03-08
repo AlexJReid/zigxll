@@ -2,10 +2,10 @@
 const std = @import("std");
 const xl_imports = @import("xl_imports.zig");
 const xl = xl_imports.xl;
-const xlvalue = @import("core/xlvalue.zig");
-const XLValue = xlvalue.XLValue;
+const XLValue = @import("core/xlvalue.zig").XLValue;
 
 const allocator = std.heap.c_allocator;
+const xl_helpers = @import("xl_helpers.zig");
 
 /// Parameter metadata for Excel function arguments
 pub const ParamMeta = struct {
@@ -82,8 +82,12 @@ pub fn ExcelFunction(comptime meta: anytype) type {
         pub const excel_export_name = export_name;
 
         fn makeErrorValue() *xl.XLOPER12 {
-            var err_val = XLValue.err(allocator, xl.xlerrValue);
-            return err_val.get();
+            const err_ptr = allocator.create(xl.XLOPER12) catch unreachable;
+            err_ptr.* = .{
+                .xltype = xl.xltypeErr | xl.xlbitDLLFree,
+                .val = .{ .err = xl.xlerrValue },
+            };
+            return err_ptr;
         }
 
         const Impl = switch (params.len) {
@@ -95,6 +99,7 @@ pub fn ExcelFunction(comptime meta: anytype) type {
             },
             1 => struct {
                 fn impl(a1: *xl.XLOPER12) callconv(.c) *xl.XLOPER12 {
+                    xl_helpers.debugLogFmt("{s}: called with 1 arg", .{name});
                     const arg1 = extractArg(params[0].type.?, a1) catch return makeErrorValue();
                     defer freeArg(params[0].type.?, arg1);
                     const result = func(arg1) catch return makeErrorValue();
@@ -220,12 +225,24 @@ pub fn ExcelFunction(comptime meta: anytype) type {
         pub const impl = Impl.impl;
 
         fn extractArg(comptime T: type, xloper: *xl.XLOPER12) !T {
-            const val = XLValue.fromXLOPER12(allocator, xloper.*, false);
+            // Strip flag bits to get the base type
+            const base_type = xloper.xltype & ~@as(c_uint, xl.xlbitXLFree | xl.xlbitDLLFree);
+            xl_helpers.debugLogFmt("extractArg: xltype=0x{x} base=0x{x} want={s}", .{ xloper.xltype, base_type, @typeName(T) });
 
-            // Handle different types
             if (T == f64) {
-                return try val.as_double();
+                if (base_type == xl.xltypeNum) {
+                    xl_helpers.debugLogFmt("extractArg: got num={d}", .{xloper.val.num});
+                    return xloper.val.num;
+                }
+                if (base_type == xl.xltypeInt) {
+                    xl_helpers.debugLogFmt("extractArg: got int={d}", .{xloper.val.w});
+                    return @floatFromInt(xloper.val.w);
+                }
+                xl_helpers.debugLogFmt("extractArg: NOT a number, base_type=0x{x}", .{base_type});
+                return error.NotANumber;
             } else if (T == []const u8) {
+                if (base_type != xl.xltypeStr) return error.NotAString;
+                const val = XLValue.fromXLOPER12(allocator, xloper.*, false);
                 return try val.as_utf8str();
             } else if (T == *xl.XLOPER12) {
                 return xloper;
@@ -240,41 +257,24 @@ pub fn ExcelFunction(comptime meta: anytype) type {
             }
         }
 
+        fn heapXloper(xloper: xl.XLOPER12) *xl.XLOPER12 {
+            const ptr = allocator.create(xl.XLOPER12) catch return makeErrorValue();
+            ptr.* = xloper;
+            ptr.xltype |= xl.xlbitDLLFree;
+            return ptr;
+        }
+
         fn wrapResult(result: anytype) *xl.XLOPER12 {
             const T = @TypeOf(result);
             if (T == f64) {
-                const val = XLValue.fromDouble(allocator, result);
-                // Allocate XLOPER12 on heap so Excel can access it after function returns
-                const ret_ptr = allocator.create(xl.XLOPER12) catch {
-                    const err_val = XLValue.err(allocator, xl.xlerrValue);
-                    const err_ptr = allocator.create(xl.XLOPER12) catch unreachable;
-                    err_ptr.* = err_val.m_val;
-                    err_ptr.xltype |= xl.xlbitDLLFree;
-                    return err_ptr;
-                };
-                ret_ptr.* = val.m_val;
-                ret_ptr.xltype |= xl.xlbitDLLFree;
-                return ret_ptr;
+                return heapXloper(.{
+                    .xltype = xl.xltypeNum,
+                    .val = .{ .num = result },
+                });
             } else if (T == []const u8 or T == []u8) {
                 defer allocator.free(result);
-                const val = XLValue.fromUtf8String(allocator, result) catch {
-                    const err_val = XLValue.err(allocator, xl.xlerrValue);
-                    const err_ptr = allocator.create(xl.XLOPER12) catch unreachable;
-                    err_ptr.* = err_val.m_val;
-                    err_ptr.xltype |= xl.xlbitDLLFree;
-                    return err_ptr;
-                };
-                // Allocate XLOPER12 on heap so Excel can access it after function returns
-                const ret_ptr = allocator.create(xl.XLOPER12) catch {
-                    const err_val = XLValue.err(allocator, xl.xlerrValue);
-                    const err_ptr = allocator.create(xl.XLOPER12) catch unreachable;
-                    err_ptr.* = err_val.m_val;
-                    err_ptr.xltype |= xl.xlbitDLLFree;
-                    return err_ptr;
-                };
-                ret_ptr.* = val.m_val;
-                ret_ptr.xltype |= xl.xlbitDLLFree;
-                return ret_ptr;
+                const val = XLValue.fromUtf8String(allocator, result) catch return makeErrorValue();
+                return heapXloper(val.m_val);
             } else if (T == *xl.XLOPER12) {
                 return result;
             } else {

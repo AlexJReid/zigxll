@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const xl_imports = @import("xl_imports.zig");
 const xl = xl_imports.xl;
-const Excel12f = xl_imports.Excel12f;
+
 
 // Platform-specific debug output
 const outputDebug = if (builtin.os.tag == .windows)
@@ -33,5 +33,5 @@ pub fn debugLogFmt(comptime fmt: []const u8, args: anytype) void {
 }
 
 pub inline fn xlFree(oper: *xl.XLOPER12) void {
-    _ = Excel12f(xl.xlFree, null, 1, .{oper});
+    _ = xl.Excel12f(xl.xlFree, null, 1, oper);
 }

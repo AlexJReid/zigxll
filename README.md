@@ -1,6 +1,6 @@
 # ZigXLL
 
-A Zig package for creating Excel custom functions.
+A Zig package for creating Excel custom functions. Cross-compiles to Windows from Mac or Linux — no Windows install needed to build.
 
 There's a [standalone repo here](https://github.com/AlexJReid/zigxll-standalone/) which can be used as a template.
 
@@ -60,7 +60,6 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
-        .strip = true,
     });
 
     // Build the XLL using the framework helper
@@ -88,7 +87,6 @@ pub const function_modules = .{
 `src/my_functions.zig` defines your Excel functions:
 
 ```zig
-const std = @import("std");
 const xll = @import("xll");
 const ExcelFunction = xll.ExcelFunction;
 const ParamMeta = xll.ParamMeta;

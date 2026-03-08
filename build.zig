@@ -32,6 +32,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/framework_main.zig"),
             .target = target,
             .optimize = optimize,
+            .strip = true,
         }),
         .linkage = .dynamic,
     });
@@ -112,6 +113,7 @@ pub fn buildXll(
             .root_source_file = xll_dep.path("src/xll_builder.zig"),
             .target = target,
             .optimize = optimize,
+            .strip = true,
         }),
         .linkage = .dynamic,
     });

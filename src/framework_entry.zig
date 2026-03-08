@@ -3,7 +3,6 @@ const std = @import("std");
 // Re-export all framework modules
 pub const xl_imports = @import("xl_imports.zig");
 pub const xl = xl_imports.xl;
-const Excel12f = xl_imports.Excel12f;
 
 pub const xlvalue = @import("core/xlvalue.zig");
 pub const XLValue = xlvalue.XLValue;
@@ -45,7 +44,7 @@ pub fn xlAutoOpen() callconv(.c) c_int {
 
     // Get DLL path for function registration
     var xDLL: xl.XLOPER12 = undefined;
-    const getName_result = Excel12f(xl.xlGetName, &xDLL, 0, .{});
+    const getName_result = xl.Excel12f(xl.xlGetName, &xDLL, 0);
     defer xl_helpers.xlFree(&xDLL);
     if (getName_result != xl.xlretSuccess) {
         xl_helpers.debugLog("Failed to get XLL path");
@@ -124,7 +123,7 @@ fn registerFunction(comptime FuncType: type, xll_path: *xl.XLOPER12, allocator: 
 
     // Call xlfRegister using Excel12v
     var result: xl.XLOPER12 = undefined;
-    const ret = xl_imports.Excel12v(xl.xlfRegister, &result, @intCast(arg_count), @ptrCast(&args));
+    const ret = xl.Excel12v(xl.xlfRegister, &result, @intCast(arg_count), @ptrCast(&args));
     defer xl_helpers.xlFree(&result);
 
     if (ret != xl.xlretSuccess) {
