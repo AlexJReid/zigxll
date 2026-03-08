@@ -46,7 +46,7 @@ pub fn build(b: *std.Build) void {
     xll.linkLibC();
     xll.linkSystemLibrary("user32");
     xll.linkSystemLibrary("xlcall32");
-
+    xll.linkSystemLibrary("frmwrk32");
 
     const install_xll = b.addInstallFile(xll.getEmittedBin(), "lib/output.xll");
     b.getInstallStep().dependOn(&install_xll.step);
@@ -67,6 +67,7 @@ pub fn build(b: *std.Build) void {
     if (native_target.result.os.tag == .windows) {
         tests.addLibraryPath(b.path("excel/lib"));
         tests.linkSystemLibrary("xlcall32");
+        tests.linkSystemLibrary("frmwrk32");
     }
 
     const run_tests = b.addRunArtifact(tests);
@@ -135,7 +136,7 @@ pub fn buildXll(
     xll.linkLibC();
     xll.linkSystemLibrary("user32");
     xll.linkSystemLibrary("xlcall32");
-
+    xll.linkSystemLibrary("frmwrk32");
 
     return xll;
 }
