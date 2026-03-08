@@ -7,7 +7,8 @@
 **  Platform:       Microsoft Windows
 **
 **  DEPENDENCY:
-**  Include <windows.h> before you include this.
+**  Include <windows.h> before you include this (on Windows).
+**  On non-Windows platforms, win_compat.h provides the needed types.
 **
 **  This file defines the constants and
 **  data types which are used in the
@@ -16,6 +17,13 @@
 */
 
 #pragma once
+
+#ifdef _WIN32
+/* Windows: use windows.h as usual */
+#else
+/* Non-Windows: use compatibility header */
+#include "win_compat.h"
+#endif
 
 /*
 ** XL 12 Basic Datatypes

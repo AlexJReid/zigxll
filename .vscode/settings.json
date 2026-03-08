@@ -1,3 +1,7 @@
 {
-  "zig.buildOnSave": true,
+  "zig.buildOnSaveProvider": "zls",
+  "zig.zls.buildOnSaveStep": "check",
+  "zig.formattingProvider": "zls",
+  "testing.automaticallyOpenPeekView": "never",
+  "zig.testArgs": ["build", "test", "--"]
 }

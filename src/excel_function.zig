@@ -2,7 +2,7 @@
 const std = @import("std");
 const xl_imports = @import("xl_imports.zig");
 const xl = xl_imports.xl;
-const xlvalue = @import("xlvalue.zig");
+const xlvalue = @import("core/xlvalue.zig");
 const XLValue = xlvalue.XLValue;
 
 const allocator = std.heap.c_allocator;
@@ -12,6 +12,17 @@ pub const ParamMeta = struct {
     name: ?[]const u8 = null,
     description: ?[]const u8 = null,
 };
+
+fn sanitizeExportName(comptime len: usize, comptime input: *const [len]u8) *const [len]u8 {
+    comptime {
+        var result: [len]u8 = input.*;
+        for (&result) |*c| {
+            if (c.* == '.') c.* = '_';
+        }
+        const final = result;
+        return &final;
+    }
+}
 
 pub fn ExcelFunction(comptime meta: anytype) type {
     const name = meta.name;
@@ -54,8 +65,9 @@ pub fn ExcelFunction(comptime meta: anytype) type {
     };
 
     // Generate unique export name based on function name
+    // Replace dots with underscores to avoid Windows GetProcAddress issues
     const export_name = comptime blk: {
-        break :blk name ++ "_impl"; // not sure if should be "more" unique
+        break :blk sanitizeExportName(name.len, name) ++ "_impl";
     };
 
     return struct {

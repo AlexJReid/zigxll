@@ -177,6 +177,23 @@ This library uses the **Microsoft Excel 2013 XLL SDK** headers and libraries. Th
 
 By using this software you agree to the EULA specified by Microsoft in the above download.
 
+## Development on Mac/Linux
+
+Tests can run natively without any Windows SDK:
+
+```bash
+zig build test
+```
+
+To cross-compile the XLL from Mac/Linux, install [xwin](https://jake-shadle.github.io/xwin/) to get the Windows SDK and CRT libraries:
+
+```bash
+brew install xwin  # or: cargo install xwin
+xwin --accept-license splat --output ~/.xwin
+```
+
+Once set up, `zig build` will automatically detect `~/.xwin` and cross-compile the XLL.
+
 ## Working on the framework
 
 You can also clone this repo to improve the framework directly:

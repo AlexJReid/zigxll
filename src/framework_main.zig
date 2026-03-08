@@ -29,6 +29,11 @@ export fn xlAutoRegister(pxName: ?*xl.XLOPER12) callconv(.c) ?*xl.XLOPER12 {
     return null;
 }
 
+export fn xlAutoRegister12(pxName: ?*xl.XLOPER12) callconv(.c) ?*xl.XLOPER12 {
+    _ = pxName;
+    return null;
+}
+
 export fn xlAutoAdd() callconv(.c) c_int {
     return xl.xlretSuccess;
 }
