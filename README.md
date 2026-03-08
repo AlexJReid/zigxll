@@ -1,25 +1,28 @@
 # ZigXLL
 
-A Zig package for creating Excel custom functions. Cross-compiles to Windows from Mac or Linux: no Windows install needed to build! This means you can use cheaper Linux CI runners.
+A Zig framework for building Excel XLL add-ins. Cross-compiles from Mac/Linux to Windows — no Windows install needed to build.
 
-There's a [standalone repo here](https://github.com/AlexJReid/zigxll-standalone/) which can be used as a template.
+[Standalone template repo](https://github.com/AlexJReid/zigxll-standalone/)
 
-## Why
+## Why XLLs
 
-This exists because I wanted to see if it was possible to use Zig's C interop and comptime to make the Excel C SDK nicer to work with.
+XLL add-ins are native DLLs that run inside the Excel process. No serialization, no IPC, no interpreter. Excel calls your functions directly and can parallelize them across cores during recalculation.
 
-This came about as I'm working on [xllify](https://xllify.com) in C++ and Luau. I have no complaints, other than curiosity over how this would look in Zig. One day maybe xllify will be Zig - it's too soon to tell.
+The catch: the C SDK dates from the early 1990s. Memory management is manual, the type system is painful, and there's almost no tooling. Microsoft themselves call it "impractical for most users."
 
-Anyway, we end up with:
+## Why Zig
 
-- **C performance but not C**: Higher level. No boilerplate. Memory rules enforced.
-- **Zero boilerplate**: No need to export `xlAutoOpen`, `xlAutoClose`, etc. - the framework handles it all
-- **Automatic discovery**: Just add an `ExcelFunction()` and reference your function
-- **Type safety**: Zig types automatically convert to/from Excel values (support for ranges soon)
-- **Thread-safe by default**: Functions marked thread-safe automatically for MTR
-- **UTF-8 strings**: Write Zig code with normal `[]u8` strings, framework handles UTF-16 conversion
-- **Error handling**: Zig errors automatically become `#VALUE!` in Excel
-- **comptime**: Compilation-time code generation balances conciseness without affecting runtime performance
+Zig's C interop and comptime make the SDK usable. You write normal Zig functions with standard types. The framework generates all the Excel boilerplate at compile time — exports, type conversions, registration, COM vtables for RTD.
+
+What you get:
+
+- No boilerplate — define functions with `ExcelFunction()`, framework handles the rest
+- Type-safe conversions between Zig types and XLOPER12
+- UTF-8 strings (framework handles UTF-16 conversion)
+- Zig errors become `#VALUE!` in Excel
+- Thread-safe by default (MTR)
+- Cross-compilation from Mac/Linux via [xwin](https://jake-shadle.github.io/xwin/)
+- Pure Zig COM RTD servers — no ATL/MFC. See [RTD docs](./userdocs/rtd-servers.md)
 
 ## Quick start
 
@@ -100,13 +103,13 @@ pub const function_modules = .{
 };
 ```
 
-Build and load:
+Build:
 
 ```bash
 zig build
 ```
 
-The XLL lands in `zig-out/lib/my_functions.xll`. Double click to load in Excel.
+Output lands in `zig-out/lib/my_functions.xll`. Double-click to load in Excel.
 
 ## Documentation
 
@@ -114,17 +117,15 @@ The XLL lands in `zig-out/lib/my_functions.xll`. Double click to load in Excel.
 - [RTD servers](./userdocs/rtd-servers.md) — pushing live data to Excel, using RTD from UDFs
 - [How it works](./userdocs/how-it-works.md) — comptime code generation, architecture
 
-## Cross compiling on Mac or Linux
+## Cross-compilation
 
-XLL add-ins can only run on Windows Excel. But thanks to Zig, you can build them on cheaper Linux-based CI runners or your Mac dev machine. You will still need Windows (or some VM, check out Azure for good value remote ones) to actually try out your XLL.
-
-Tests can run natively without any Windows SDK:
+Tests run natively without any Windows SDK:
 
 ```bash
 zig build test
 ```
 
-To cross-compile the XLL from Mac/Linux, install [xwin](https://jake-shadle.github.io/xwin/) to get the Windows SDK and CRT libraries:
+To cross-compile the XLL, install [xwin](https://jake-shadle.github.io/xwin/) for Windows SDK/CRT libraries:
 
 **macOS:**
 ```bash
@@ -138,16 +139,16 @@ cargo install xwin
 xwin --accept-license splat --output ~/.xwin
 ```
 
-If you don't have Cargo, [install Rust](https://rustup.rs/) first, or download a prebuilt xwin binary from the [releases page](https://github.com/Jake-Shadle/xwin/releases).
+If you don't have Cargo, [install Rust](https://rustup.rs/) or grab a prebuilt binary from the [releases page](https://github.com/Jake-Shadle/xwin/releases).
 
-Once set up, `zig build` will automatically detect `~/.xwin` and cross-compile the XLL.
+Once set up, `zig build` auto-detects `~/.xwin` and cross-compiles.
 
 ## Dependencies
 
-This library uses the **Microsoft Excel 2013 XLL SDK** headers and libraries, included in the `excel/` directory.
+Uses the **Microsoft Excel 2013 XLL SDK** headers and libraries, included in `excel/`.
 
 - **Download**: https://www.microsoft.com/en-gb/download/details.aspx?id=35567
-- **Files used**: `xlcall.h`, `FRAMEWRK.H`, `xlcall32.lib`, `frmwrk32.lib`
+- **Files**: `xlcall.h`, `FRAMEWRK.H`, `xlcall32.lib`, `frmwrk32.lib`
 
 By using this software you agree to the EULA specified by Microsoft in the above download.
 
