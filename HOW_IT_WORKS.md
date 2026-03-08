@@ -68,7 +68,7 @@ The user never sees or edits this file. It just hooks up the framework to Excel'
 
 This runs at compile time to build the complete list of functions. It accesses `@import("root")` which is the `xll_builder.zig`, which exposes the user's modules.
 
-This takes the zig defined metadata and calls Excel's `xlfRegister` function for n functions. Again this is mostly code generated at compile time.
+This takes the zig defined metadata and calls Excel's `xlfRegister` function for n functions. Again this is mostly code generated at compile time. A dummy trailing empty string is appended to the registration args to prevent Excel from truncating the argument list.
 
 ### 5. Build helper (build.zig)
 
@@ -89,14 +89,12 @@ Excel uses UTF-16 wide strings. XLValue handles conversion:
 - `fromUtf8String()`: UTF-8 → UTF-16 (allocates)
 - `as_utf8str()`: UTF-16 → UTF-8 (allocates)
 
-Note: the naming of these fns will be fixed.
-
 ## Flow
 
 ### Execution of the ADD function in Excel
 
 1. User enters `=ADD(1, 2)` in Excel
-2. Excel looks up registered function "add_impl" in the XLL DLL
+2. Excel looks up the registered exported function `add_impl` in the XLL DLL (dots in names are replaced with underscores by `sanitizeExportName()` to avoid Windows `GetProcAddress` issues)
 3. Excel calls `add_impl(XLOPER12*, XLOPER12*)` with C calling convention
 4. The generated impl function:
    - Wraps each XLOPER12 in XLValue
@@ -105,7 +103,7 @@ Note: the naming of these fns will be fixed.
    - Converts f64 result to XLOPER12 via `wrapResult()`
    - Returns pointer to XLOPER12
 5. Excel displays the result
-6. Later, Excel calls `xlAutoFree12()` to free the returned memory
+6. Later, Excel calls `xlAutoFree12()` to free the returned memory (triggered by the `xlbitDLLFree` flag set on the returned XLOPER12 by `heapXloper()`)
 
 ### Comptime function registration
 
