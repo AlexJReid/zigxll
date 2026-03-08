@@ -34,7 +34,7 @@ Add ZigXLL as a dependency in your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .xll = .{
-        .url = "https://github.com/alexjreid/zigxll/archive/refs/tags/v0.2.0.tar.gz",
+        .url = "https://github.com/alexjreid/zigxll/archive/refs/tags/v0.2.5.tar.gz",
         .hash = "...",
     },
 },
@@ -261,10 +261,19 @@ zig build test
 
 To cross-compile the XLL from Mac/Linux, install [xwin](https://jake-shadle.github.io/xwin/) to get the Windows SDK and CRT libraries:
 
+**macOS:**
 ```bash
-brew install xwin  # or: cargo install xwin
+brew install xwin
 xwin --accept-license splat --output ~/.xwin
 ```
+
+**Linux:**
+```bash
+cargo install xwin
+xwin --accept-license splat --output ~/.xwin
+```
+
+If you don't have Cargo, [install Rust](https://rustup.rs/) first, or download a prebuilt xwin binary from the [releases page](https://github.com/Jake-Shadle/xwin/releases).
 
 Once set up, `zig build` will automatically detect `~/.xwin` and cross-compile the XLL.
 
