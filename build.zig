@@ -140,6 +140,11 @@ pub fn buildXll(
     xll.linkSystemLibrary("xlcall32");
     xll.linkSystemLibrary("frmwrk32");
 
+    // COM/RTD support
+    xll.linkSystemLibrary("oleaut32");
+    xll.linkSystemLibrary("advapi32");
+    xll.linkSystemLibrary("ole32");
+
     return xll;
 }
 

@@ -3,4 +3,5 @@
 
 comptime {
     _ = @import("core/xlvalue.zig");
+    _ = @import("rtd_tests.zig");
 }

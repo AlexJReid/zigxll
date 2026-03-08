@@ -1,14 +1,16 @@
 // My custom Excel functions
 const std = @import("std");
 const xll = @import("xll");
+const xl = xll.xl;
 const ExcelFunction = xll.ExcelFunction;
 const ParamMeta = xll.ParamMeta;
+const rtd_call = xll.rtd_call;
 
 const allocator = std.heap.c_allocator;
 
 // Example custom function
 pub const double = ExcelFunction(.{
-    .name = "double",
+    .name = "ZigXLL.DOUBLE",
     .description = "Double a number",
     .category = "Zig Functions",
     .params = &[_]ParamMeta{
@@ -22,7 +24,7 @@ fn doubleFunc(x: f64) !f64 {
 }
 
 pub const reverse = ExcelFunction(.{
-    .name = "reverse",
+    .name = "ZigXLL.REVERSE",
     .description = "Reverse a string",
     .category = "Zig Functions",
     .params = &[_]ParamMeta{
@@ -43,7 +45,7 @@ fn reverseFunc(text: []const u8) ![]const u8 {
 // Claude wrote these so be careful.
 // Black-Scholes Call Option
 pub const bs_call = ExcelFunction(.{
-    .name = "ZigXLLExample.BS_CALL",
+    .name = "ZigXLL.BS_CALL",
     .description = "Black-Scholes call option price",
     .category = "Zig Functions",
     .params = &[_]ParamMeta{
@@ -68,7 +70,7 @@ fn blackScholesCall(S: f64, K: f64, T: f64, r: f64, sigma: f64) !f64 {
 
 // Black-Scholes Put Option
 pub const bs_put = ExcelFunction(.{
-    .name = "ZigXLLExample.BS_PUT",
+    .name = "ZigXLL.BS_PUT",
     .description = "Black-Scholes put option price",
     .category = "Zig Functions",
     .params = &[_]ParamMeta{
@@ -107,6 +109,19 @@ fn normalCDF(x: f64) f64 {
     } else {
         return 1.0 - normalCDF(-x);
     }
+}
+
+// RTD wrapper — use =TIMER() instead of =RTD("zigxll.rtd", , "tick")
+pub const timer = ExcelFunction(.{
+    .name = "ZigXLL.TIMER",
+    .description = "Live ticking counter (RTD wrapper)",
+    .category = "Zig Functions",
+    .params = &[_]ParamMeta{},
+    .func = timerFunc,
+});
+
+fn timerFunc() !*xl.XLOPER12 {
+    return rtd_call.subscribe("zigxll.rtd", &.{"tick"});
 }
 
 // Tests

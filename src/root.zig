@@ -6,6 +6,10 @@ pub const xlvalue = @import("core/xlvalue.zig");
 pub const xl_helpers = @import("xl_helpers.zig");
 pub const function_discovery = @import("function_discovery.zig");
 
+pub const rtd = @import("rtd.zig");
+pub const rtd_registry = @import("rtd_registry.zig");
+pub const rtd_call = @import("rtd_call.zig");
+
 // Convenience exports
 pub const xl = xl_imports.xl;
 pub const XLValue = xlvalue.XLValue;

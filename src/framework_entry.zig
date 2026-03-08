@@ -9,6 +9,7 @@ pub const XLValue = xlvalue.XLValue;
 
 pub const xl_helpers = @import("xl_helpers.zig");
 pub const function_discovery = @import("function_discovery.zig");
+pub const rtd_registry = @import("rtd_registry.zig");
 
 const excel_allocator = std.heap.c_allocator;
 var initialized = false;
@@ -60,6 +61,17 @@ pub fn xlAutoOpen() callconv(.c) c_int {
         };
     }
     xl_helpers.debugLogFmt("Successfully registered {d} functions", .{all_functions.len});
+
+    // Auto-register RTD servers if user module declares them
+    const user_mod = @import("root").user_functions;
+    if (comptime @hasDecl(user_mod, "rtd_servers")) {
+        if (rtd_registry.getXllPathSlice(&xDLL)) |xll_path| {
+            inline for (user_mod.rtd_servers) |server_module| {
+                const cfg = server_module.rtd_config;
+                rtd_registry.registerRtdServer(cfg.clsid, cfg.prog_id, xll_path);
+            }
+        }
+    }
 
     initialized = true;
     return xl.xlretSuccess;
