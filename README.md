@@ -6,9 +6,7 @@ There's a [standalone repo here](https://github.com/AlexJReid/zigxll-standalone/
 
 ## Why
 
-This is all predicated on the possibility that someone would want to write functions for Excel in Zig. So that makes it very niche. 
-
-It exists because I wanted to see if it was possible to use Zig's C interop and comptime to make the Excel C SDK nicer to work with. I think it works quite nicely already, but I'd be glad of your feedback. I'm [@alexjreid](https://x.com/AlexJReid) on X.
+This exists because I wanted to see if it was possible to use Zig's C interop and comptime to make the Excel C SDK nicer to work with.
 
 This came about as I'm working on [xllify](https://xllify.com) in C++ and Luau. I have no complaints, other than curiosity over how this would look in Zig. One day maybe xllify will be Zig - it's too soon to tell as I'm still learning the language (it's a moving target.)
 
@@ -140,15 +138,21 @@ The XLL lands in `zig-out/lib/my_functions.xll`. Double click to load in Excel.
 
 **Parameters:**
 - `f64` - Numbers
+- `bool` - Booleans (TRUE/FALSE)
 - `[]const u8` - Strings (UTF-8)
+- `[][]const f64` - 2D arrays/ranges of numbers (empty cells become 0.0)
 - `*XLOPER12` - Raw Excel values (advanced)
 
 **Return types:**
 - `f64` - Numbers
+- `bool` - Booleans (TRUE/FALSE)
 - `[]const u8` / `[]u8` - Strings (automatically freed by Excel)
+- `[][]const f64` / `[][]f64` - 2D arrays/ranges of numbers (automatically freed by Excel)
 - `*XLOPER12` - Raw Excel values (advanced)
 
-Functions return `!T` - errors become `#VALUE!` in Excel. Support for ranges is next.
+**Optional parameters:** Use `?T` types (like `?f64`, `?bool`, `?[]const u8`) for optional parameters.
+
+Functions return `!T` - errors become `#VALUE!` in Excel.
 
 ## Available options for `ExcelFunction`
 
@@ -159,12 +163,84 @@ pub const myFunc = ExcelFunction(.{
     .category = "MyCategory",
     .params = &[_]ParamMeta{
         .{ .name = "x", .description = "Parameter help text" },
+        .{ .name = "y", .description = "Optional parameter (default 10)" },
         .{ .description = "Name is optional" },
     },
     .func = myFuncImpl,
     .thread_safe = true, // Default is true
 });
+
+// Function with optional parameter
+fn myFuncImpl(x: f64, y: ?f64, z: f64) !f64 {
+    const y_val = y orelse 10.0; // Use default if not provided
+    return x + y_val + z;
+}
 ```
+
+**Optional parameters**: Use `?T` types (like `?f64`, `?bool`) for optional parameters. When Excel passes a missing value, it becomes `null`. Use the `orelse` operator to provide default values in your implementation.
+
+## Built-in Example Functions
+
+The framework includes several example functions in `src/builtin_functions.zig` that demonstrate different features:
+
+### ZigDouble
+```
+=ZigDouble(x, y, z)
+```
+Demonstrates basic numeric operations: returns `x * 2 + y - z`
+
+**Example:** `=ZigDouble(5, 3, 1)` → 12
+
+### ZigMatrix
+```
+=ZigMatrix([rows], [cols])
+```
+Returns a matrix filled with sequential numbers. Both parameters are optional.
+
+- **Default:** 10×5 matrix (50 values: 1-50)
+- **Max size:** 100×100
+- **Examples:**
+  - `=ZigMatrix()` → 10×5 matrix
+  - `=ZigMatrix(3, 7)` → 3×7 matrix (21 values: 1-21)
+
+Demonstrates: optional parameters, 2D array return values (`[][]f64`)
+
+### ZigNot
+```
+=ZigNot(value)
+```
+Returns the logical NOT of a boolean value.
+
+**Examples:**
+- `=ZigNot(TRUE)` → FALSE
+- `=ZigNot(A1>10)` → inverts the comparison
+
+Demonstrates: boolean parameter and return type
+
+### ZigPower
+```
+=ZigPower(base, [exponent])
+```
+Raises a number to a power. Exponent is optional (default: 2).
+
+**Examples:**
+- `=ZigPower(5)` → 25 (5²)
+- `=ZigPower(5, 3)` → 125 (5³)
+
+Demonstrates: optional numeric parameter with default value
+
+### ZigSumRange
+```
+=ZigSumRange(data)
+```
+Sums all values in a range or 2D array.
+
+**Examples:**
+- `=ZigSumRange(A1:C5)` → sums all values in the range
+- `=ZigSumRange(A:A)` → sums entire column A
+- `=ZigSumRange(1:10)` → sums rows 1-10
+
+Demonstrates: range/array input parameter (`[][]const f64`)
 
 ## Dependencies
 

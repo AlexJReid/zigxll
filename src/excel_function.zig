@@ -225,36 +225,64 @@ pub fn ExcelFunction(comptime meta: anytype) type {
         pub const impl = Impl.impl;
 
         fn extractArg(comptime T: type, xloper: *xl.XLOPER12) !T {
-            // Strip flag bits to get the base type
-            const base_type = xloper.xltype & ~@as(c_uint, xl.xlbitXLFree | xl.xlbitDLLFree);
-            xl_helpers.debugLogFmt("extractArg: xltype=0x{x} base=0x{x} want={s}", .{ xloper.xltype, base_type, @typeName(T) });
+            const val = XLValue.fromXLOPER12(allocator, xloper.*, false);
+            xl_helpers.debugLogFmt("extractArg: xltype=0x{x} want={s}", .{ xloper.xltype, @typeName(T) });
 
+            // Check if T is an optional type
+            const type_info = @typeInfo(T);
+            if (type_info == .optional) {
+                if (val.is_missing()) {
+                    return null;
+                }
+                const Child = type_info.optional.child;
+                return try extractNonOptional(Child, val);
+            }
+
+            return try extractNonOptional(T, val);
+        }
+
+        fn extractNonOptional(comptime T: type, val: XLValue) !T {
             if (T == f64) {
-                if (base_type == xl.xltypeNum) {
-                    xl_helpers.debugLogFmt("extractArg: got num={d}", .{xloper.val.num});
-                    return xloper.val.num;
-                }
-                if (base_type == xl.xltypeInt) {
-                    xl_helpers.debugLogFmt("extractArg: got int={d}", .{xloper.val.w});
-                    return @floatFromInt(xloper.val.w);
-                }
-                xl_helpers.debugLogFmt("extractArg: NOT a number, base_type=0x{x}", .{base_type});
-                return error.NotANumber;
+                return try val.as_double();
+            } else if (T == bool) {
+                return try val.as_bool();
             } else if (T == []const u8) {
-                if (base_type != xl.xltypeStr) return error.NotAString;
-                const val = XLValue.fromXLOPER12(allocator, xloper.*, false);
                 return try val.as_utf8str();
+            } else if (T == [][]const f64) {
+                return try val.as_matrix();
             } else if (T == *xl.XLOPER12) {
-                return xloper;
+                @compileError("Optional XLOPER12 pointers are not supported");
             } else {
                 @compileError("Unsupported parameter type: " ++ @typeName(T));
             }
         }
 
         fn freeArg(comptime T: type, arg: T) void {
+            // Check if T is an optional type
+            const type_info = @typeInfo(T);
+            if (type_info == .optional) {
+                if (arg) |value| {
+                    // Free the unwrapped value if needed
+                    const Child = type_info.optional.child;
+                    freeNonOptional(Child, value);
+                }
+                return;
+            }
+
+            // Handle non-optional types
+            freeNonOptional(T, arg);
+        }
+
+        fn freeNonOptional(comptime T: type, arg: T) void {
             if (T == []const u8) {
                 allocator.free(arg);
+            } else if (T == [][]const f64) {
+                for (arg) |row| {
+                    allocator.free(row);
+                }
+                allocator.free(arg);
             }
+            // Other types don't need explicit freeing
         }
 
         fn heapXloper(xloper: xl.XLOPER12) *xl.XLOPER12 {
@@ -271,9 +299,23 @@ pub fn ExcelFunction(comptime meta: anytype) type {
                     .xltype = xl.xltypeNum,
                     .val = .{ .num = result },
                 });
+            } else if (T == bool) {
+                return heapXloper(.{
+                    .xltype = xl.xltypeBool,
+                    .val = .{ .xbool = if (result) 1 else 0 },
+                });
             } else if (T == []const u8 or T == []u8) {
                 defer allocator.free(result);
                 const val = XLValue.fromUtf8String(allocator, result) catch return makeErrorValue();
+                return heapXloper(val.m_val);
+            } else if (T == [][]const f64 or T == [][]f64) {
+                defer {
+                    for (result) |row| {
+                        allocator.free(row);
+                    }
+                    allocator.free(result);
+                }
+                const val = XLValue.fromMatrix(allocator, result) catch return makeErrorValue();
                 return heapXloper(val.m_val);
             } else if (T == *xl.XLOPER12) {
                 return result;
@@ -287,4 +329,85 @@ pub fn ExcelFunction(comptime meta: anytype) type {
             @export(&Impl.impl, .{ .name = export_name });
         }
     };
+}
+
+// Tests for optional parameter support
+test "optional parameter - f64 with value" {
+    // Create an XLOPER12 with a number
+    var xloper: xl.XLOPER12 = .{
+        .xltype = xl.xltypeNum,
+        .val = .{ .num = 42.0 },
+    };
+
+    const TestFunc = ExcelFunction(.{
+        .name = "TestOptional",
+        .func = struct {
+            fn impl(x: ?f64) !?f64 {
+                return x;
+            }
+        }.impl,
+    });
+
+    const result = try TestFunc.extractArg(?f64, &xloper);
+    try std.testing.expect(result != null);
+    try std.testing.expectEqual(@as(f64, 42.0), result.?);
+}
+
+test "optional parameter - f64 missing" {
+    // Create an XLOPER12 with missing type
+    var xloper: xl.XLOPER12 = .{
+        .xltype = xl.xltypeMissing,
+        .val = undefined,
+    };
+
+    const TestFunc = ExcelFunction(.{
+        .name = "TestOptional",
+        .func = struct {
+            fn impl(x: ?f64) !?f64 {
+                return x;
+            }
+        }.impl,
+    });
+
+    const result = try TestFunc.extractArg(?f64, &xloper);
+    try std.testing.expect(result == null);
+}
+
+test "optional parameter - bool with value" {
+    var xloper: xl.XLOPER12 = .{
+        .xltype = xl.xltypeBool,
+        .val = .{ .xbool = 1 },
+    };
+
+    const TestFunc = ExcelFunction(.{
+        .name = "TestOptional",
+        .func = struct {
+            fn impl(x: ?bool) !?bool {
+                return x;
+            }
+        }.impl,
+    });
+
+    const result = try TestFunc.extractArg(?bool, &xloper);
+    try std.testing.expect(result != null);
+    try std.testing.expectEqual(true, result.?);
+}
+
+test "optional parameter - bool missing" {
+    var xloper: xl.XLOPER12 = .{
+        .xltype = xl.xltypeMissing,
+        .val = undefined,
+    };
+
+    const TestFunc = ExcelFunction(.{
+        .name = "TestOptional",
+        .func = struct {
+            fn impl(x: ?bool) !?bool {
+                return x;
+            }
+        }.impl,
+    });
+
+    const result = try TestFunc.extractArg(?bool, &xloper);
+    try std.testing.expect(result == null);
 }

@@ -7,9 +7,9 @@
     .dependencies = .{
         .xll = .{
             // When using a published release:
-            // .url = "https://github.com/alexjreid/zigxll/archive/refs/tags/v0.2.0.tar.gz",
-            // .hash = "xll-0.2.0-<hash>",
-            // For local development:
+            // .url = "https://github.com/alexjreid/zigxll/archive/refs/tags/v0.2.3.tar.gz",
+            // .hash = "xll-0.2.3-<hash>",
+            // For local development where this dir is relative to zigxll, use path:
             .path = "..",
         },
     },

@@ -255,6 +255,51 @@ pub const XLValue = struct {
         return XLValue.fromXLOPER12(self.allocator, cell, false);
     }
 
+    // Extract multi array as 2D array of f64
+    // Caller must free the returned array and each row
+    // Note: Empty/nil cells are converted to 0.0
+    pub fn as_matrix(self: *const XLValue) ![][]const f64 {
+        if (!self.is_multi()) return error.NotAMatrix;
+
+        const num_rows = self.rows();
+        const num_cols = self.columns();
+
+        var result = try self.allocator.alloc([]const f64, num_rows);
+        errdefer {
+            for (result, 0..) |row, i| {
+                if (i > 0) self.allocator.free(row);
+            }
+            self.allocator.free(result);
+        }
+
+        for (0..num_rows) |r| {
+            var row = try self.allocator.alloc(f64, num_cols);
+            errdefer if (r > 0) self.allocator.free(row);
+
+            for (0..num_cols) |c| {
+                const cell = try self.get_cell(r, c);
+
+                // Handle different cell types - skip nil/missing/error cells
+                if (cell.is_num()) {
+                    row[c] = try cell.as_double();
+                } else if (cell.is_nil() or cell.is_missing()) {
+                    // Empty cells become 0.0
+                    row[c] = 0.0;
+                } else if (cell.is_err()) {
+                    // Error cells become 0.0 (could alternatively propagate the error)
+                    row[c] = 0.0;
+                } else {
+                    // Other types (string, bool) - try to convert or default to 0
+                    row[c] = cell.as_double() catch 0.0;
+                }
+            }
+
+            result[r] = row;
+        }
+
+        return result;
+    }
+
     // Raw pointer access
     pub fn get(self: *XLValue) *xl.XLOPER12 {
         return &self.m_val;
@@ -555,8 +600,6 @@ test "fromXLOPER12 with raw error" {
 test "fromXLOPER12 with raw string (no ownership)" {
     const allocator = std.testing.allocator;
 
-    // Build a wide string buffer like Excel would: length prefix + chars + null
-    // "Hi" = 2 chars
     var str_buf = [_]u16{ 2, 'H', 'i', 0 };
 
     const raw: xl.XLOPER12 = .{
@@ -564,7 +607,6 @@ test "fromXLOPER12 with raw string (no ownership)" {
         .val = .{ .str = &str_buf },
     };
 
-    // take_ownership = false: we don't own the buffer, don't free it
     var val = XLValue.fromXLOPER12(allocator, raw, false);
     defer val.deinit();
 
@@ -580,9 +622,7 @@ test "fromXLOPER12 with raw string (no ownership)" {
 test "fromXLOPER12 with raw string (with ownership)" {
     const allocator = std.testing.allocator;
 
-    // Allocate string buffer that XLValue will own and free
-    // "Test" = 4 chars
-    var str_buf = try allocator.alloc(u16, 6); // length + 4 chars + null
+    var str_buf = try allocator.alloc(u16, 6);
     str_buf[0] = 4;
     str_buf[1] = 'T';
     str_buf[2] = 'e';
@@ -595,9 +635,8 @@ test "fromXLOPER12 with raw string (with ownership)" {
         .val = .{ .str = str_buf.ptr },
     };
 
-    // take_ownership = true: XLValue will free the buffer on deinit
     var val = XLValue.fromXLOPER12(allocator, raw, true);
-    defer val.deinit(); // This should free str_buf
+    defer val.deinit();
 
     try std.testing.expect(val.is_str());
     try std.testing.expect(val.m_owns_memory);
@@ -611,7 +650,6 @@ test "fromXLOPER12 with raw string (with ownership)" {
 test "fromXLOPER12 with raw multi array (no ownership)" {
     const allocator = std.testing.allocator;
 
-    // Build a 2x2 array of numbers like Excel would
     var cells = [_]xl.XLOPER12{
         .{ .xltype = xl.xltypeNum, .val = .{ .num = 1.0 } },
         .{ .xltype = xl.xltypeNum, .val = .{ .num = 2.0 } },
@@ -636,7 +674,6 @@ test "fromXLOPER12 with raw multi array (no ownership)" {
     try std.testing.expectEqual(@as(usize, 2), val.rows());
     try std.testing.expectEqual(@as(usize, 2), val.columns());
 
-    // Check cell values
     const cell_00 = try val.get_cell(0, 0);
     try std.testing.expectEqual(@as(f64, 1.0), try cell_00.as_double());
 
@@ -653,7 +690,6 @@ test "fromXLOPER12 with raw multi array (no ownership)" {
 test "fromXLOPER12 with raw multi array (with ownership)" {
     const allocator = std.testing.allocator;
 
-    // Allocate array that XLValue will own and free
     var cells = try allocator.alloc(xl.XLOPER12, 4);
     cells[0] = .{ .xltype = xl.xltypeNum, .val = .{ .num = 10.0 } };
     cells[1] = .{ .xltype = xl.xltypeNum, .val = .{ .num = 20.0 } };
@@ -670,7 +706,7 @@ test "fromXLOPER12 with raw multi array (with ownership)" {
     };
 
     var val = XLValue.fromXLOPER12(allocator, raw, true);
-    defer val.deinit(); // This should free cells
+    defer val.deinit();
 
     try std.testing.expect(val.is_multi());
     try std.testing.expect(val.m_owns_memory);
@@ -682,7 +718,6 @@ test "fromXLOPER12 with raw multi array (with ownership)" {
 test "fromXLOPER12 with mixed type array" {
     const allocator = std.testing.allocator;
 
-    // Excel arrays can contain mixed types
     var str_buf = [_]u16{ 3, 'a', 'b', 'c', 0 };
 
     var cells = [_]xl.XLOPER12{
@@ -704,25 +739,132 @@ test "fromXLOPER12 with mixed type array" {
     var val = XLValue.fromXLOPER12(allocator, raw, false);
     defer val.deinit();
 
-    // Check number
     const cell_num = try val.get_cell(0, 0);
     try std.testing.expect(cell_num.is_num());
     try std.testing.expectEqual(@as(f64, 42.0), try cell_num.as_double());
 
-    // Check string
     const cell_str = try val.get_cell(0, 1);
     try std.testing.expect(cell_str.is_str());
     const str = try cell_str.as_utf8str();
     defer allocator.free(str);
     try std.testing.expectEqualStrings("abc", str);
 
-    // Check bool
     const cell_bool = try val.get_cell(1, 0);
     try std.testing.expect(cell_bool.is_bool());
     try std.testing.expectEqual(true, try cell_bool.as_bool());
 
-    // Check error
     const cell_err = try val.get_cell(1, 1);
     try std.testing.expect(cell_err.is_err());
     try std.testing.expectEqual(@as(c_int, xl.xlerrNA), cell_err.m_val.val.err);
+}
+
+test "XLValue matrix round-trip with as_matrix" {
+    const allocator = std.testing.allocator;
+
+    const input_data = &[_][]const f64{
+        &.{ 1.0, 2.0, 3.0 },
+        &.{ 4.0, 5.0, 6.0 },
+        &.{ 7.0, 8.0, 9.0 },
+    };
+
+    var matrix = try XLValue.fromMatrix(allocator, input_data);
+    defer matrix.deinit();
+
+    try std.testing.expect(matrix.is_multi());
+    try std.testing.expectEqual(@as(usize, 3), matrix.rows());
+    try std.testing.expectEqual(@as(usize, 3), matrix.columns());
+
+    const result = try matrix.as_matrix();
+    defer {
+        for (result) |row| {
+            allocator.free(row);
+        }
+        allocator.free(result);
+    }
+
+    try std.testing.expectEqual(@as(usize, 3), result.len);
+    try std.testing.expectEqual(@as(usize, 3), result[0].len);
+
+    try std.testing.expectEqual(@as(f64, 1.0), result[0][0]);
+    try std.testing.expectEqual(@as(f64, 2.0), result[0][1]);
+    try std.testing.expectEqual(@as(f64, 3.0), result[0][2]);
+    try std.testing.expectEqual(@as(f64, 4.0), result[1][0]);
+    try std.testing.expectEqual(@as(f64, 5.0), result[1][1]);
+    try std.testing.expectEqual(@as(f64, 6.0), result[1][2]);
+    try std.testing.expectEqual(@as(f64, 7.0), result[2][0]);
+    try std.testing.expectEqual(@as(f64, 8.0), result[2][1]);
+    try std.testing.expectEqual(@as(f64, 9.0), result[2][2]);
+}
+
+test "XLValue as_matrix edge cases" {
+    const allocator = std.testing.allocator;
+
+    {
+        var matrix = try XLValue.fromMatrix(allocator, &.{
+            &.{42.0},
+        });
+        defer matrix.deinit();
+
+        const result = try matrix.as_matrix();
+        defer {
+            for (result) |row| {
+                allocator.free(row);
+            }
+            allocator.free(result);
+        }
+
+        try std.testing.expectEqual(@as(usize, 1), result.len);
+        try std.testing.expectEqual(@as(usize, 1), result[0].len);
+        try std.testing.expectEqual(@as(f64, 42.0), result[0][0]);
+    }
+
+    {
+        var matrix = try XLValue.fromMatrix(allocator, &.{
+            &.{ 1.0, 2.0, 3.0, 4.0 },
+        });
+        defer matrix.deinit();
+
+        const result = try matrix.as_matrix();
+        defer {
+            for (result) |row| {
+                allocator.free(row);
+            }
+            allocator.free(result);
+        }
+
+        try std.testing.expectEqual(@as(usize, 1), result.len);
+        try std.testing.expectEqual(@as(usize, 4), result[0].len);
+        try std.testing.expectEqual(@as(f64, 1.0), result[0][0]);
+        try std.testing.expectEqual(@as(f64, 4.0), result[0][3]);
+    }
+
+    {
+        var matrix = try XLValue.fromMatrix(allocator, &.{
+            &.{1.0},
+            &.{2.0},
+            &.{3.0},
+        });
+        defer matrix.deinit();
+
+        const result = try matrix.as_matrix();
+        defer {
+            for (result) |row| {
+                allocator.free(row);
+            }
+            allocator.free(result);
+        }
+
+        try std.testing.expectEqual(@as(usize, 3), result.len);
+        try std.testing.expectEqual(@as(usize, 1), result[0].len);
+        try std.testing.expectEqual(@as(f64, 1.0), result[0][0]);
+        try std.testing.expectEqual(@as(f64, 2.0), result[1][0]);
+        try std.testing.expectEqual(@as(f64, 3.0), result[2][0]);
+    }
+
+    {
+        var num_val = XLValue.fromDouble(allocator, 42.0);
+        defer num_val.deinit();
+
+        try std.testing.expectError(error.NotAMatrix, num_val.as_matrix());
+    }
 }
