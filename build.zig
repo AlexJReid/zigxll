@@ -143,7 +143,9 @@ pub fn buildXll(
 /// If ~/.xwin exists (installed via `brew install xwin && xwin --accept-license splat --output ~/.xwin`),
 /// add its Windows SDK and CRT paths so we can cross-compile to Windows from Mac/Linux.
 fn addXwinPaths(b: *std.Build, compile: *std.Build.Step.Compile) void {
-    const xwin_dir = std.fs.path.join(b.allocator, &.{ std.posix.getenv("HOME") orelse "", ".xwin" }) catch return;
+    // xwin is only used for cross-compiling to Windows from Mac/Linux
+    const home = std.process.getEnvVarOwned(b.allocator, "HOME") catch return;
+    const xwin_dir = std.fs.path.join(b.allocator, &.{ home, ".xwin" }) catch return;
     var dir = std.fs.openDirAbsolute(xwin_dir, .{}) catch return;
     dir.close();
 
