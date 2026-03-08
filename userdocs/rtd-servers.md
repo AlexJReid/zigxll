@@ -64,7 +64,7 @@ In Excel, use `=RTD("myapp.rtd", , "some_topic")` to subscribe.
 Your handler receives an `RtdContext` pointer with:
 
 - **`update_event`** — Excel's callback interface. Usually you don't touch this directly.
-- **`topics`** — Array of `TopicEntry` structs tracking active subscriptions (up to 64).
+- **`topics`** — Array of `TopicEntry` structs tracking active subscriptions (up to `MAX_TOPICS`).
 - **`topic_count`** — Number of currently active topics.
 - **`user_data`** — An `?*anyopaque` pointer for your own state. Cast your allocated state into this in `onStart` and retrieve it in other callbacks.
 - **`notifyExcel()`** — Call this to tell Excel that new data is available. Excel will then call `onRefreshValue` for dirty topics.
