@@ -1,6 +1,6 @@
 # ZigXLL
 
-A Zig package for creating Excel custom functions. Cross-compiles to Windows from Mac or Linux — no Windows install needed to build.
+A Zig package for creating Excel custom functions. Cross-compiles to Windows from Mac or Linux: no Windows install needed to build! This means you can use cheaper Linux CI runners.
 
 There's a [standalone repo here](https://github.com/AlexJReid/zigxll-standalone/) which can be used as a template.
 
@@ -8,9 +8,7 @@ There's a [standalone repo here](https://github.com/AlexJReid/zigxll-standalone/
 
 This exists because I wanted to see if it was possible to use Zig's C interop and comptime to make the Excel C SDK nicer to work with.
 
-This came about as I'm working on [xllify](https://xllify.com) in C++ and Luau. I have no complaints, other than curiosity over how this would look in Zig. One day maybe xllify will be Zig - it's too soon to tell as I'm still learning the language (it's a moving target.)
-
-Claude helped a lot with the comptime stuff and the demos. Thanks, Claude.
+This came about as I'm working on [xllify](https://xllify.com) in C++ and Luau. I have no complaints, other than curiosity over how this would look in Zig. One day maybe xllify will be Zig - it's too soon to tell.
 
 Anyway, we end up with:
 
@@ -116,7 +114,9 @@ The XLL lands in `zig-out/lib/my_functions.xll`. Double click to load in Excel.
 - [RTD servers](./userdocs/rtd-servers.md) — pushing live data to Excel, using RTD from UDFs
 - [How it works](./userdocs/how-it-works.md) — comptime code generation, architecture
 
-## Development on Mac/Linux
+## Cross compiling on Mac or Linux
+
+XLL add-ins can only run on Windows Excel. But thanks to Zig, you can build them on cheaper Linux-based CI runners or your Mac dev machine. You will still need Windows (or some VM, check out Azure for good value remote ones) to actually try out your XLL.
 
 Tests can run natively without any Windows SDK:
 
@@ -150,12 +150,6 @@ This library uses the **Microsoft Excel 2013 XLL SDK** headers and libraries, in
 - **Files used**: `xlcall.h`, `FRAMEWRK.H`, `xlcall32.lib`, `frmwrk32.lib`
 
 By using this software you agree to the EULA specified by Microsoft in the above download.
-
-## Working on the framework
-
-1. Edit `src/user_functions.zig` or create new modules
-2. Run `zig build`
-3. Your XLL is in `zig-out/lib/output.xll`
 
 ## License
 
