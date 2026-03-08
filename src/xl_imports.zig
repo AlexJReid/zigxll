@@ -1,14 +1,13 @@
 // Shared Excel imports to ensure type compatibility across modules
-pub const win = @cImport({
-    @cDefine("UNICODE", "1");
-    @cDefine("_UNICODE", "1");
-    @cInclude("windows.h");
-});
+const builtin = @import("builtin");
 
+// Import Excel types from xlcall.h + framewrk.h (works cross-platform via win_compat.h)
 pub const xl = @cImport({
     @cDefine("UNICODE", "1");
     @cDefine("_UNICODE", "1");
-    @cInclude("windows.h");
+    if (builtin.os.tag == .windows) {
+        @cInclude("windows.h");
+    }
     @cInclude("xlcall.h");
-    @cInclude("framewrk.h");
+    @cInclude("FRAMEWRK.H");
 });

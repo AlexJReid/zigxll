@@ -1,0 +1,8 @@
+{
+  "enable_build_on_save": true,
+  "build_on_save_step": "check",
+  "global_compile_commands": null,
+  "relative_include_paths": [
+    "./"
+  ]
+}

@@ -11,6 +11,9 @@ pub fn build(b: *std.Build) void {
     });
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSmall });
 
+    // Add include path for ZLS to find C headers during @cImport analysis
+    b.addSearchPrefix("excel");
+
     // Create module for xll framework (for external users)
     const xll_module = b.addModule("xll", .{
         .root_source_file = b.path("src/root.zig"),
@@ -32,13 +35,14 @@ pub fn build(b: *std.Build) void {
             .strip = true,
         }),
         .linkage = .dynamic,
-        .version = .{ .major = 1, .minor = 0, .patch = 0 },
     });
 
     xll.root_module.addImport("build_options", framework_build_options.createModule());
 
     xll.addIncludePath(b.path("excel/include"));
     xll.addLibraryPath(b.path("excel/lib"));
+
+    addXwinPaths(b, xll);
 
     xll.linkLibC();
     xll.linkSystemLibrary("user32");
@@ -48,19 +52,27 @@ pub fn build(b: *std.Build) void {
     const install_xll = b.addInstallFile(xll.getEmittedBin(), "lib/output.xll");
     b.getInstallStep().dependOn(&install_xll.step);
 
-    // Add test step
+    // Add test step - uses native target so tests can run on Mac/Linux
+    const native_target = b.resolveTargetQuery(.{});
     const tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/xlvalue.zig"),
-            .target = target,
+            .root_source_file = b.path("src/tests.zig"),
+            .target = native_target,
             .optimize = optimize,
         }),
     });
     tests.addIncludePath(b.path("excel/include"));
     tests.linkLibC();
 
+    // Only link Excel libraries on Windows
+    if (native_target.result.os.tag == .windows) {
+        tests.addLibraryPath(b.path("excel/lib"));
+        tests.linkSystemLibrary("xlcall32");
+        tests.linkSystemLibrary("frmwrk32");
+    }
+
     const run_tests = b.addRunArtifact(tests);
-    run_tests.has_side_effects = true; // Always run, show output
+    run_tests.has_side_effects = true;
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_tests.step);
@@ -104,7 +116,6 @@ pub fn buildXll(
             .strip = true,
         }),
         .linkage = .dynamic,
-        .version = .{ .major = 1, .minor = 0, .patch = 0 },
     });
 
     // Add framework module (xll_builder uses this as "xll_framework")
@@ -122,10 +133,45 @@ pub fn buildXll(
     xll.addLibraryPath(excel_lib);
     xll.root_module.addIncludePath(excel_include);
 
+    addXwinPaths(b, xll);
+
     xll.linkLibC();
     xll.linkSystemLibrary("user32");
     xll.linkSystemLibrary("xlcall32");
     xll.linkSystemLibrary("frmwrk32");
 
     return xll;
+}
+
+/// If ~/.xwin exists (installed via `brew install xwin && xwin --accept-license splat --output ~/.xwin`),
+/// add its Windows SDK and CRT paths so we can cross-compile to Windows from Mac/Linux.
+fn addXwinPaths(b: *std.Build, compile: *std.Build.Step.Compile) void {
+    // xwin is only used for cross-compiling to Windows from Mac/Linux
+    const home = std.process.getEnvVarOwned(b.allocator, "HOME") catch return;
+    const xwin_dir = std.fs.path.join(b.allocator, &.{ home, ".xwin" }) catch return;
+    var dir = std.fs.openDirAbsolute(xwin_dir, .{}) catch return;
+    dir.close();
+
+    compile.addLibraryPath(.{ .cwd_relative = b.fmt("{s}/sdk/lib/um/x86_64", .{xwin_dir}) });
+    compile.addLibraryPath(.{ .cwd_relative = b.fmt("{s}/crt/lib/x86_64", .{xwin_dir}) });
+    compile.addLibraryPath(.{ .cwd_relative = b.fmt("{s}/sdk/lib/ucrt/x86_64", .{xwin_dir}) });
+
+    compile.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/crt/include", .{xwin_dir}) });
+    compile.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/sdk/include/ucrt", .{xwin_dir}) });
+    compile.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/sdk/include/um", .{xwin_dir}) });
+    compile.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/sdk/include/shared", .{xwin_dir}) });
+
+    // Write a libc configuration file so Zig knows where the MSVC CRT lives
+    const libc_conf = b.fmt(
+        \\include_dir={s}/sdk/include/ucrt
+        \\sys_include_dir={s}/crt/include
+        \\crt_dir={s}/crt/lib/x86_64
+        \\msvc_lib_dir={s}/crt/lib/x86_64
+        \\kernel32_lib_dir={s}/sdk/lib/um/x86_64
+        \\gcc_dir=
+        \\
+    , .{ xwin_dir, xwin_dir, xwin_dir, xwin_dir, xwin_dir });
+
+    const libc_file = b.addWriteFiles().add("libc.conf", libc_conf);
+    compile.setLibCFile(libc_file);
 }

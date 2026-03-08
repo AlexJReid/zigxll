@@ -1,4 +1,3 @@
-// Text manipulation functions for Excel
 const std = @import("std");
 const excel_function = @import("excel_function.zig");
 const ExcelFunction = excel_function.ExcelFunction;
@@ -7,23 +6,21 @@ const ParamMeta = excel_function.ParamMeta;
 const allocator = std.heap.c_allocator;
 
 pub const double = ExcelFunction(.{
-    .name = "ZigDouble",
-    .description = "Example function: doubles x, adds y, subtracts z",
+    .name = "zigxll.Double",
+    .description = "Doubles a number",
     .category = "Zig Functions",
     .params = &[_]ParamMeta{
         .{ .name = "x", .description = "Number to double" },
-        .{ .name = "y", .description = "Number to add" },
-        .{ .name = "z", .description = "Number to subtract" },
     },
     .func = doubleFunc,
 });
 
-fn doubleFunc(x: f64, y: f64, z: f64) !f64 {
-    return x * 2 + y - z;
+fn doubleFunc(x: f64) !f64 {
+    return x * 2;
 }
 
 pub const zigmatrix = ExcelFunction(.{
-    .name = "ZigMatrix",
+    .name = "zigxll.Matrix",
     .description = "Returns a matrix filled with sequential numbers (default 10x5, max 100x100)",
     .category = "Zig Functions",
     .params = &[_]ParamMeta{
@@ -77,7 +74,7 @@ fn zigMatrixFunc(rows_param: ?f64, cols_param: ?f64) ![][]f64 {
 }
 
 pub const not = ExcelFunction(.{
-    .name = "ZigNot",
+    .name = "zigxll.Not",
     .description = "Returns the logical NOT of a boolean value",
     .category = "Zig Functions",
     .params = &[_]ParamMeta{
@@ -91,7 +88,7 @@ fn notFunc(value: bool) !bool {
 }
 
 pub const power = ExcelFunction(.{
-    .name = "ZigPower",
+    .name = "zigxll.Power",
     .description = "Raises a number to a power (default exponent is 2)",
     .category = "Zig Functions",
     .params = &[_]ParamMeta{
@@ -107,7 +104,7 @@ fn powerFunc(base: f64, exponent: ?f64) !f64 {
 }
 
 pub const sumrange = ExcelFunction(.{
-    .name = "ZigSumRange",
+    .name = "zigxll.SumRange",
     .description = "Sums all values in a range or 2D array",
     .category = "Zig Functions",
     .params = &[_]ParamMeta{

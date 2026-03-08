@@ -24,7 +24,6 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-
     // Install the XLL (rename .dll to .xll)
     const install_xll = b.addInstallFile(xll.getEmittedBin(), "lib/my_excel_functions.xll");
     b.getInstallStep().dependOn(&install_xll.step);

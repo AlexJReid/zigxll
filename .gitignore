@@ -8,3 +8,4 @@ output.xll
 .ziggy*
 *.xll
 .DS_Store
+.xwin-cache

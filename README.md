@@ -1,6 +1,6 @@
 # ZigXLL
 
-A Zig package for implementing Excel custom functions against the C SDK.
+A Zig package for creating Excel custom functions. Cross-compiles to Windows from Mac or Linux — no Windows install needed to build.
 
 There's a [standalone repo here](https://github.com/AlexJReid/zigxll-standalone/) which can be used as a template.
 
@@ -58,7 +58,6 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
-        .strip = true,
     });
 
     // Build the XLL using the framework helper
@@ -86,7 +85,6 @@ pub const function_modules = .{
 `src/my_functions.zig` defines your Excel functions:
 
 ```zig
-const std = @import("std");
 const xll = @import("xll");
 const ExcelFunction = xll.ExcelFunction;
 const ParamMeta = xll.ParamMeta;
@@ -252,6 +250,23 @@ This library uses the **Microsoft Excel 2013 XLL SDK** headers and libraries. Th
 - **Files used**: `xlcall.h`, `FRAMEWRK.H`, `xlcall32.lib`, `frmwrk32.lib`
 
 By using this software you agree to the EULA specified by Microsoft in the above download.
+
+## Development on Mac/Linux
+
+Tests can run natively without any Windows SDK:
+
+```bash
+zig build test
+```
+
+To cross-compile the XLL from Mac/Linux, install [xwin](https://jake-shadle.github.io/xwin/) to get the Windows SDK and CRT libraries:
+
+```bash
+brew install xwin  # or: cargo install xwin
+xwin --accept-license splat --output ~/.xwin
+```
+
+Once set up, `zig build` will automatically detect `~/.xwin` and cross-compile the XLL.
 
 ## Working on the framework
 

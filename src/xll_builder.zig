@@ -27,7 +27,12 @@ export fn xlAutoFree(p: ?*xl.XLOPER12) callconv(.c) void {
 }
 
 export fn xlAutoRegister(pxName: ?*xl.XLOPER12) callconv(.c) ?*xl.XLOPER12 {
-    _ = pxName; // Required by Excel SDK but not supported
+    _ = pxName;
+    return null;
+}
+
+export fn xlAutoRegister12(pxName: ?*xl.XLOPER12) callconv(.c) ?*xl.XLOPER12 {
+    _ = pxName;
     return null;
 }
 
