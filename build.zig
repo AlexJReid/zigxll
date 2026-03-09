@@ -4,10 +4,7 @@ const builtin = @import("builtin");
 // Framework build
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{
-        .default_target = if (builtin.os.tag == .windows)
-            .{ .cpu_arch = .x86_64, .os_tag = .windows }
-        else
-            .{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .msvc },
+        .default_target = .{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .msvc },
     });
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSmall });
 
