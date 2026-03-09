@@ -2,7 +2,7 @@
 const std = @import("std");
 const xl_imports = @import("xl_imports.zig");
 const xl = xl_imports.xl;
-const XLValue = @import("core/xlvalue.zig").XLValue;
+const XLValue = @import("xlvalue.zig").XLValue;
 
 const allocator = std.heap.c_allocator;
 const xl_helpers = @import("xl_helpers.zig");

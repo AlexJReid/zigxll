@@ -2,6 +2,6 @@
 // This file imports modules to run their tests
 
 comptime {
-    _ = @import("core/xlvalue.zig");
+    _ = @import("xlvalue.zig");
     _ = @import("rtd_tests.zig");
 }

@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const xl_imports = @import("../xl_imports.zig");
+const xl_imports = @import("xl_imports.zig");
 const xl = xl_imports.xl;
 
 // Excel uses 16-bit wide chars regardless of platform's native wchar_t

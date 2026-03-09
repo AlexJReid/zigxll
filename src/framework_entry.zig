@@ -4,7 +4,7 @@ const std = @import("std");
 pub const xl_imports = @import("xl_imports.zig");
 pub const xl = xl_imports.xl;
 
-pub const xlvalue = @import("core/xlvalue.zig");
+pub const xlvalue = @import("xlvalue.zig");
 pub const XLValue = xlvalue.XLValue;
 
 pub const xl_helpers = @import("xl_helpers.zig");
