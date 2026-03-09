@@ -1,8 +1,14 @@
-# ZigXLL
+# zigxll
 
-A Zig framework for building Excel XLL add-ins. Cross-compiles from Mac/Linux to Windows without needing a Windows install.
+A Zig framework for building Excel XLL add-ins including live data support.
 
 [Standalone template repo](https://github.com/AlexJReid/zigxll-standalone/) | [Example project](./example)
+
+## Documentation
+
+- [Creating functions](./userdocs/functions.md) - types, options, returning strings/arrays, namespacing
+- [RTD servers](./userdocs/rtd-servers.md) - pushing live data to Excel, using RTD from UDFs
+- [How it works](./userdocs/how-it-works.md) - comptime code generation, architecture
 
 ## Why XLLs
 
@@ -14,7 +20,7 @@ The catch: the C SDK dates from the early 1990s. Memory management is manual, th
 
 Zig's C interop and comptime make the SDK usable. You write normal Zig functions with standard types. The framework generates all the Excel boilerplate at compile time: exports, type conversions, registration, COM vtables for RTD.
 
-What you get:
+What Zig gives us:
 
 - No boilerplate - define functions with `ExcelFunction()` and macros with `ExcelMacro()`, framework handles the rest
 - Type-safe conversions between Zig types and XLOPER12
@@ -34,7 +40,7 @@ Add ZigXLL as a dependency in your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .xll = .{
-        .url = "https://github.com/alexjreid/zigxll/archive/refs/tags/v0.2.5.tar.gz",
+        .url = "https://github.com/alexjreid/zigxll/archive/refs/tags/v0.3.1.tar.gz",
         .hash = "...",
     },
 },
@@ -112,12 +118,6 @@ zig build
 
 Output lands in `zig-out/lib/my_functions.xll`. Double-click to load in Excel.
 
-## Documentation
-
-- [Functions and macros](./userdocs/functions.md) - types, options, returning strings/arrays, macros, error helpers
-- [RTD servers](./userdocs/rtd-servers.md) - pushing live data to Excel, using RTD from UDFs
-- [How it works](./userdocs/how-it-works.md) - comptime code generation, architecture
-
 ## Cross-compilation
 
 Tests run natively without any Windows SDK:
@@ -152,6 +152,10 @@ Uses the **Microsoft Excel 2013 XLL SDK** headers and libraries, included in `ex
 - **Files**: `xlcall.h`, `FRAMEWRK.H`, `xlcall32.lib`, `frmwrk32.lib`
 
 By using this software you agree to the EULA specified by Microsoft in the above download.
+
+## Commercial and Support
+
+I can build an Excel add-in for you. Drop me an [email](mailto:alex@lexvica.com).
 
 ## License
 
