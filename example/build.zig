@@ -2,10 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 pub fn build(b: *std.Build) void {
-    const target = b.resolveTargetQuery(if (builtin.os.tag == .windows)
-        .{ .cpu_arch = .x86_64, .os_tag = .windows }
-    else
-        .{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .msvc });
+    const target = b.resolveTargetQuery(.{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .msvc });
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSmall });
 
     // Create a module for our user functions (don't add imports yet)
