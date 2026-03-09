@@ -18,12 +18,9 @@
 
 #pragma once
 
-#ifdef _WIN32
-/* Windows: use windows.h as usual */
-#else
-/* Non-Windows: use compatibility header */
+/* Use lightweight compatibility header instead of windows.h
+ * to avoid MSVC header parse errors with Zig's @cImport */
 #include "win_compat.h"
-#endif
 
 /*
 ** XL 12 Basic Datatypes

@@ -1,12 +1,12 @@
 /*
- * Windows type compatibility header for non-Windows platforms
- * Provides minimal type definitions needed by xlcall.h
+ * Windows type compatibility header for xlcall.h
+ * Provides minimal type definitions needed by xlcall.h and FRAMEWRK.H
+ * Used on all platforms — avoids pulling in full windows.h which
+ * can fail with Zig's @cImport on native MSVC installs.
  */
 
 #ifndef WIN_COMPAT_H
 #define WIN_COMPAT_H
-
-#ifndef _WIN32
 
 #include <stddef.h>
 #include <stdint.h>
@@ -17,7 +17,7 @@ typedef uint32_t UINT32;
 typedef uint32_t DWORD;
 typedef uint16_t WORD;
 typedef uint8_t BYTE;
-typedef int BOOL;
+/* BOOL is defined by xlcall.h as INT32 */
 typedef long LONG;
 
 /* Pointer-sized types */
@@ -46,12 +46,22 @@ typedef struct tagPOINT {
     LONG y;
 } POINT;
 
-/* Calling convention macros (no-op on non-Windows) */
+/* Calling convention macros — no-op for Zig's @cImport.
+ * Zig handles calling conventions via its own ABI, not C macros.
+ * Always define these regardless of platform. */
+#ifndef CALLBACK
 #define CALLBACK
+#endif
+#ifndef WINAPI
 #define WINAPI
-#define _cdecl
-#define cdecl
+#endif
+#undef pascal
 #define pascal
+#undef cdecl
+#define cdecl
+#undef _cdecl
+#define _cdecl
+#undef far
 #define far
 
 /* TRUE/FALSE if not defined */
@@ -61,7 +71,5 @@ typedef struct tagPOINT {
 #ifndef FALSE
 #define FALSE 0
 #endif
-
-#endif /* _WIN32 */
 
 #endif /* WIN_COMPAT_H */
