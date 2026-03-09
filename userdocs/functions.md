@@ -145,7 +145,7 @@ fn livePriceImpl(symbol: []const u8) !*xl.XLOPER12 {
 }
 ```
 
-See [rtd-servers.md](./rtd-servers.md) for more on RTD.
+Functions that call `rtd_call.subscribe()` must set `.thread_safe = false` — `xlfRtd` must run on Excel's main thread. See [rtd-servers.md](./rtd-servers.md) for more on RTD.
 
 ## Multiple modules
 
@@ -171,7 +171,95 @@ Use dots in the function name to namespace it in Excel:
 
 Excel shows this as `Finance.BSCall`. The exported DLL symbol uses underscores (`Finance_BSCall_impl`) since Windows `GetProcAddress` doesn't support dots.
 
+## Async functions
+
+Add `.async = true` to run a function on a background thread pool. The cell shows `#N/A` while computing, then updates with the final result. Once complete, the cell becomes a plain value (no ongoing overhead).
+
+```zig
+pub const slow_calc = ExcelFunction(.{
+    .name = "SlowCalc",
+    .description = "Expensive calculation",
+    .async = true,
+    .func = slowCalcImpl,
+    .params = &[_]ParamMeta{
+        .{ .name = "x", .description = "Input value" },
+    },
+});
+
+fn slowCalcImpl(x: f64) !f64 {
+    // This runs on a background thread — Excel stays responsive.
+    doExpensiveWork();
+    return x * 2.0;
+}
+```
+
+The function signature is identical to a sync function. The framework handles all RTD plumbing, caching, and thread management automatically.
+
+### How it works
+
+1. First call → cache miss → spawns work on thread pool → cell shows `#N/A`
+2. Worker finishes → result cached → Excel recalculates
+3. Next recalc → cache hit → returns value directly → RTD subscription dropped
+4. Subsequent calls with same args → instant cache hit (no re-computation)
+
+### Intermediate values
+
+To send progress updates to the cell before the final result, add `*AsyncContext` as the last parameter:
+
+```zig
+const AsyncContext = xll.AsyncContext;
+
+pub const slow_calc = ExcelFunction(.{
+    .name = "SlowCalc",
+    .description = "Expensive calculation with progress",
+    .async = true,
+    .func = slowCalcImpl,
+    .params = &[_]ParamMeta{
+        .{ .name = "x", .description = "Input value" },
+    },
+});
+
+fn slowCalcImpl(x: f64, ctx: *AsyncContext) !f64 {
+    ctx.yield(.{ .string = "Computing..." });     // cell updates immediately
+    doFirstPhase();
+
+    ctx.yield(.{ .double = x * 0.5 });            // partial result
+    doSecondPhase();
+
+    ctx.yield(.{ .string = "Finalizing..." });
+    doFinalPhase();
+
+    return x * 2.0;  // final value — cell becomes a plain value cell
+}
+```
+
+The `*AsyncContext` parameter is invisible to Excel — it is not counted as a function parameter and doesn't need a `ParamMeta` entry. Excel sees `=SlowCalc(42)` as a 1-parameter function.
+
+`ctx.yield()` accepts an `AsyncValue`:
+
+| Variant | Example |
+|---|---|
+| `.int` | `ctx.yield(.{ .int = 42 })` |
+| `.double` | `ctx.yield(.{ .double = 3.14 })` |
+| `.string` | `ctx.yield(.{ .string = "Loading..." })` |
+| `.boolean` | `ctx.yield(.{ .boolean = true })` |
+
+Each `yield` updates the cell immediately. When the function returns, the final value replaces the last yielded value and the cell stops being an RTD cell.
+
+### Caching
+
+Results are cached by function name and arguments. Two calls to `=SlowCalc(42)` in different cells share the same cached result — the computation runs only once. The cache persists for the lifetime of the XLL (until Excel closes or the add-in is unloaded).
+
+### Thread pool
+
+Async functions run on a shared thread pool (4 workers). If all workers are busy, new tasks queue until a worker is free. The pool is created lazily on the first async call.
+
+### Interaction with thread_safe
+
+Async functions are always registered as non-thread-safe (`thread_safe` is forced to `false`). This is because the initial call uses `xlfRtd` which must run on Excel's main thread. The actual computation runs on the thread pool regardless.
+
 ## Limits
 
 - Maximum 8 parameters per function (Excel supports 255, framework currently caps at 8).
+- The `*AsyncContext` parameter (if used) does not count toward the 8-parameter limit.
 - Functions must use the C allocator (`std.heap.c_allocator`) for returned strings and arrays.

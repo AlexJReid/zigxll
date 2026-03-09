@@ -10,6 +10,7 @@ pub const XLValue = xlvalue.XLValue;
 pub const xl_helpers = @import("xl_helpers.zig");
 pub const function_discovery = @import("function_discovery.zig");
 pub const rtd_registry = @import("rtd_registry.zig");
+pub const async_handler = @import("async_handler.zig");
 
 const excel_allocator = std.heap.c_allocator;
 var initialized = false;
@@ -70,6 +71,23 @@ pub fn xlAutoOpen() callconv(.c) c_int {
                 const cfg = server_module.rtd_config;
                 rtd_registry.registerRtdServer(cfg.clsid, cfg.prog_id, xll_path);
             }
+        }
+    }
+
+    // Auto-register the built-in async RTD server if any function uses async
+    const has_async = comptime blk: {
+        for (all_functions) |FuncType| {
+            if (@hasDecl(FuncType, "excel_is_async") and FuncType.excel_is_async) {
+                break :blk true;
+            }
+        }
+        break :blk false;
+    };
+    if (has_async) {
+        if (rtd_registry.getXllPathSlice(&xDLL)) |xll_path| {
+            const acfg = async_handler.rtd_config;
+            rtd_registry.registerRtdServer(acfg.clsid, acfg.prog_id, xll_path);
+            xl_helpers.debugLog("Registered async RTD server (zigxll.async)");
         }
     }
 

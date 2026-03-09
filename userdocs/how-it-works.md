@@ -133,6 +133,76 @@ Excel uses UTF-16 wide strings. XLValue handles conversion:
 
 7. At runtime, `xlAutoOpen()` registers each discovered function with Excel
 
+## Async Functions
+
+Async functions use Excel's RTD (Real-Time Data) mechanism as a completion notifier — the same pattern used by Excel-DNA. The user writes a normal function with `.async = true`; the framework generates all the RTD and threading machinery at compile time.
+
+### Architecture
+
+All async functions share a single built-in RTD server (`zigxll.async`) and a shared thread pool (4 workers via `std.Thread.Pool`). Results are stored in a thread-safe cache keyed by `"FuncName|arg1|arg2|..."`.
+
+The key components:
+
+- **`src/async_infra.zig`** — Thread pool, topic key building, argument duplication/cleanup
+- **`src/async_handler.zig`** — Built-in RTD handler implementing `onConnect`/`onDisconnect`/`onRefreshValue`
+- **`src/async_cache.zig`** — Thread-safe `HashMap` mapping topic keys to XLOPER12 results with completion flags
+
+### Execution flow
+
+When Excel calls an async function:
+
+1. **Cache miss (first call)**
+   - `impl` builds a topic key from function name + serialized args
+   - Checks the cache — miss
+   - Duplicates arguments (they must outlive the Excel call)
+   - Spawns a worker on the thread pool
+   - Sets a pending topic key, then calls `xlfRtd` to subscribe the cell
+   - `ConnectData` in the RTD handler picks up the pending key (this is synchronous — `xlfRtd` triggers it before returning)
+   - Returns `#N/A` to the cell via RTD
+
+2. **Worker completes**
+   - Stores the result in the cache (marked as completed)
+   - Calls `UpdateNotify()` on the RTD callback — this tells Excel to recalculate
+
+3. **Recalc (cache hit)**
+   - `impl` checks cache — hit, completed
+   - Returns the value directly (bypassing RTD entirely)
+   - Excel drops the RTD subscription since the cell is no longer an RTD formula
+
+4. **Subsequent calls with same args**
+   - Instant cache hit — no thread pool, no RTD, just a direct return
+
+### Intermediate values (yield)
+
+If the user function takes `*AsyncContext` as its last parameter, it can call `ctx.yield()` to push intermediate values to the cell before the final return. Each yield:
+
+1. Stores the intermediate value in the cache (not marked as completed)
+2. Calls `UpdateNotify()` → Excel recalcs → `RefreshData` returns the intermediate value
+3. Cell updates immediately while computation continues
+
+On the final return, the value is stored as completed. The next recalc returns it directly and the RTD subscription drops.
+
+### Comptime wiring
+
+The framework detects async functions automatically:
+
+- `ExcelFunction()` checks `.async = true` and generates the cache-check / thread-pool / RTD subscription logic in `impl`
+- `framework_entry.zig` scans all registered functions at comptime; if any are async, it auto-registers the built-in async RTD server during `xlAutoOpen`
+- `xll_builder.zig` generates combined `DllGetClassObject`/`DllCanUnloadNow` exports that dispatch to both user-defined RTD servers and the async RTD server
+
+The user doesn't declare or configure anything beyond `.async = true`.
+
+### Pending key mechanism
+
+The tricky part of the RTD integration is mapping topic keys to topic IDs. Excel assigns topic IDs in `ConnectData`, but the UDF needs to set the topic key *before* calling `xlfRtd`. The solution:
+
+1. UDF sets a "pending key" on the handler (a module-level variable)
+2. UDF calls `xlfRtd`, which synchronously triggers `ConnectData`
+3. `ConnectData` reads the pending key and associates it with the topic ID Excel provides
+4. The pending key is cleared
+
+This works because `xlfRtd` calls `ConnectData` synchronously on the same thread before returning, and async functions are always registered as non-thread-safe (so only one runs at a time on Excel's main thread).
+
 ## Performance
 
 **Compile time**

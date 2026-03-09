@@ -95,6 +95,7 @@ const VT_I4: u16 = 3;
 const VT_R8: u16 = 5;
 const VT_BSTR: u16 = 8;
 const VT_DISPATCH: u16 = 9;
+const VT_ERROR: u16 = 10;
 const VT_BOOL: u16 = 11;
 const VT_VARIANT: u16 = 12;
 const VT_UNKNOWN: u16 = 13;
@@ -186,12 +187,16 @@ pub const RtdValue = union(enum) {
     double: f64,
     string: []const u16, // UTF-16 slice (not BSTR — framework converts)
     boolean: bool,
+    err: i32, // SCODE error code (e.g. DISP_E_PARAMNOTFOUND for #N/A)
     empty,
 
     /// Convenience: create from a Zig string literal or slice at comptime.
     pub fn fromUtf8(comptime s: []const u8) RtdValue {
         return .{ .string = std.unicode.utf8ToUtf16LeStringLiteral(s) };
     }
+
+    /// #N/A error value.
+    pub const na = RtdValue{ .err = @bitCast(@as(u32, 0x80020004)) }; // DISP_E_PARAMNOTFOUND
 };
 
 pub fn rtdValueToVariant(val: RtdValue, out: *VARIANT) void {
@@ -213,6 +218,10 @@ pub fn rtdValueToVariant(val: RtdValue, out: *VARIANT) void {
         .boolean => |v| {
             out.vt = VT_BOOL;
             out.data = .{ .boolval = if (v) VARIANT_TRUE else VARIANT_FALSE };
+        },
+        .err => |v| {
+            out.vt = VT_ERROR;
+            out.data = .{ .scode = v };
         },
         .empty => {
             out.vt = VT_EMPTY;
@@ -671,6 +680,17 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
 
         fn dllCanUnloadNow() callconv(.winapi) HRESULT {
             return if (@atomicLoad(i32, &g_object_count, .acquire) == 0) S_OK else S_FALSE;
+        }
+
+        /// Try to handle a DllGetClassObject call for this server's CLSID.
+        /// Returns S_OK if matched, CLASS_E_CLASSNOTAVAILABLE if not ours.
+        pub fn tryGetClassObject(rclsid: *const GUID, riid: *const GUID, ppv: *?*anyopaque) HRESULT {
+            return dllGetClassObject(rclsid, riid, ppv);
+        }
+
+        /// Returns true if this server has active objects.
+        pub fn hasActiveObjects() bool {
+            return @atomicLoad(i32, &g_object_count, .acquire) != 0;
         }
 
         /// Call this from a comptime block to emit the DLL exports.

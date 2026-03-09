@@ -7,6 +7,10 @@ const XLValue = @import("xlvalue.zig").XLValue;
 const allocator = std.heap.c_allocator;
 const xl_helpers = @import("xl_helpers.zig");
 
+// Async support
+const async_cache = @import("async_cache.zig");
+const async_infra = @import("async_infra.zig");
+
 /// Parameter metadata for Excel function arguments
 pub const ParamMeta = struct {
     name: ?[]const u8 = null,
@@ -30,20 +34,42 @@ pub fn ExcelFunction(comptime meta: anytype) type {
     const category = if (@hasField(@TypeOf(meta), "category")) meta.category else "General";
     const func = meta.func;
     const params_meta = if (@hasField(@TypeOf(meta), "params")) meta.params else &[_]ParamMeta{};
-    const thread_safe = if (@hasField(@TypeOf(meta), "thread_safe")) meta.thread_safe else true;
+    const is_async = if (@hasField(@TypeOf(meta), "async")) meta.@"async" else false;
+    // Async functions must NOT be thread-safe (they call xlfRtd which isn't thread-safe)
+    const thread_safe = if (is_async) false else (if (@hasField(@TypeOf(meta), "thread_safe")) meta.thread_safe else true);
 
     const func_info = @typeInfo(@TypeOf(func));
-    const params = switch (func_info) {
+    const all_params = switch (func_info) {
         .@"fn" => |f| f.params,
         else => @compileError("Expected function type"),
     };
 
-    // Validate params metadata matches function signature
+    // Check if the last parameter is *AsyncContext (yield support)
+    const has_yield = comptime blk: {
+        if (!is_async or all_params.len == 0) break :blk false;
+        const LastType = all_params[all_params.len - 1].type.?;
+        break :blk LastType == *async_infra.AsyncContext;
+    };
+
+    // Excel-visible params exclude the trailing *AsyncContext if present
+    const excel_param_len = if (has_yield) all_params.len - 1 else all_params.len;
+    const params = all_params[0..excel_param_len];
+
+    // Validate params metadata matches Excel-visible parameters
     comptime {
         if (params_meta.len > 0 and params_meta.len != params.len) {
-            @compileError(std.fmt.comptimePrint("Function '{s}' has {d} parameters but {d} parameter descriptions provided", .{ name, params.len, params_meta.len }));
+            @compileError(std.fmt.comptimePrint("Function '{s}' has {d} Excel parameters but {d} parameter descriptions provided", .{ name, params.len, params_meta.len }));
         }
     }
+
+    // Build an array of Excel-visible parameter types for async helpers
+    const ParamTypes = comptime blk: {
+        var types: [params.len]type = undefined;
+        for (0..params.len) |i| {
+            types[i] = params[i].type.?;
+        }
+        break :blk types;
+    };
 
     // Generate Excel type string at comptime
     const type_string = comptime blk: {
@@ -75,9 +101,10 @@ pub fn ExcelFunction(comptime meta: anytype) type {
         pub const excel_description = description;
         pub const excel_category = category;
         pub const excel_params = params_meta;
-        pub const excel_param_count = params.len;
+        pub const excel_param_count = excel_param_len;
         pub const excel_type_string = type_string;
         pub const excel_thread_safe = thread_safe;
+        pub const excel_is_async = is_async;
         pub const is_excel_function = true;
         pub const excel_export_name = export_name;
 
@@ -90,132 +117,423 @@ pub fn ExcelFunction(comptime meta: anytype) type {
             return err_ptr;
         }
 
+        // ================================================================
+        // Sync implementation (same as before)
+        // ================================================================
+
+        fn callSync(args: anytype) *xl.XLOPER12 {
+            const result = @call(.auto, func, args) catch return makeErrorValue();
+            return wrapResult(result);
+        }
+
+        // ================================================================
+        // Async support: worker task + cache logic
+        // ================================================================
+
+        /// Heap-allocated argument pack for the worker thread.
+        /// Only contains the Excel-visible args (not *AsyncContext).
+        const ExcelArgsTuple = blk: {
+            var fields: [ParamTypes.len]type = undefined;
+            for (0..ParamTypes.len) |i| {
+                fields[i] = ParamTypes[i];
+            }
+            break :blk std.meta.Tuple(&fields);
+        };
+
+        const AsyncArgs = struct {
+            key: []const u8,
+            args: ExcelArgsTuple,
+        };
+
+        /// Worker function spawned on the thread pool.
+        /// Calls the user function, stores result in cache, notifies Excel.
+        fn asyncWorker(pack: *AsyncArgs) void {
+            defer {
+                inline for (0..ParamTypes.len) |i| {
+                    async_infra.freeOwnedArg(ParamTypes[i], pack.args[i]);
+                }
+                allocator.free(pack.key);
+                allocator.destroy(pack);
+            }
+
+            if (has_yield) {
+                var ctx = async_infra.AsyncContext{ .key = pack.key };
+                var call_args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
+                inline for (0..ParamTypes.len) |i| {
+                    call_args[i] = pack.args[i];
+                }
+                call_args[ParamTypes.len] = &ctx;
+                const result = @call(.auto, func, call_args) catch {
+                    async_infra.storeResult(pack.key, makeErrorValue());
+                    return;
+                };
+                async_infra.storeResult(pack.key, wrapResult(result));
+            } else {
+                var call_args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
+                inline for (0..ParamTypes.len) |i| {
+                    call_args[i] = pack.args[i];
+                }
+                const result = @call(.auto, func, call_args) catch {
+                    async_infra.storeResult(pack.key, makeErrorValue());
+                    return;
+                };
+                async_infra.storeResult(pack.key, wrapResult(result));
+            }
+        }
+
+        /// Async impl: check cache → return cached / spawn + subscribe RTD.
+        /// Takes ownership of the extracted args (frees them before returning).
+        fn asyncImpl(extracted: ExcelArgsTuple) *xl.XLOPER12 {
+            // Build topic key from function name + serialized args
+            const key = async_infra.buildTopicKey(name, &ParamTypes, extracted) catch {
+                freeExtracted(extracted);
+                return makeErrorValue();
+            };
+            defer allocator.free(key);
+
+            const cache = async_cache.getGlobalCache();
+
+            // Cache hit?
+            if (cache.get(key)) |entry| {
+                freeExtracted(extracted);
+                if (entry.completed) {
+                    return async_infra.cloneXloper(entry.xloper);
+                }
+                return async_infra.rtdSubscribe(key) catch return makeErrorValue();
+            }
+
+            // Cache miss — spawn async work.
+            // Dupe args for the worker thread, then free originals.
+            const pack = allocator.create(AsyncArgs) catch {
+                freeExtracted(extracted);
+                return makeErrorValue();
+            };
+            var duped_args: ExcelArgsTuple = undefined;
+            inline for (0..ParamTypes.len) |i| {
+                duped_args[i] = async_infra.dupeArg(ParamTypes[i], extracted[i]);
+            }
+            // Worker gets its own copy of the key
+            const worker_key = allocator.dupe(u8, key) catch {
+                inline for (0..ParamTypes.len) |i| {
+                    async_infra.freeOwnedArg(ParamTypes[i], duped_args[i]);
+                }
+                allocator.destroy(pack);
+                freeExtracted(extracted);
+                return makeErrorValue();
+            };
+            pack.* = .{
+                .key = worker_key,
+                .args = duped_args,
+            };
+
+            freeExtracted(extracted);
+
+            // Mark in-progress in cache (cache dupes the key internally)
+            async_infra.markInProgress(key);
+
+            // Subscribe via RTD FIRST — this triggers ServerStart which
+            // sets up the global update_event pointer.  Must happen before
+            // spawning the worker, otherwise the worker could call
+            // UpdateNotify while Excel is still inside xlfRtd.
+            const rtd_result = async_infra.rtdSubscribe(key) catch {
+                inline for (0..ParamTypes.len) |i| {
+                    async_infra.freeOwnedArg(ParamTypes[i], pack.args[i]);
+                }
+                allocator.free(pack.key);
+                allocator.destroy(pack);
+                return makeErrorValue();
+            };
+            const handle = async_infra.createWorkerThread(AsyncArgs, asyncWorker, pack);
+            if (handle == null) {
+                inline for (0..ParamTypes.len) |i| {
+                    async_infra.freeOwnedArg(ParamTypes[i], pack.args[i]);
+                }
+                allocator.free(pack.key);
+                allocator.destroy(pack);
+            }
+
+            return rtd_result;
+        }
+
+        fn freeExtracted(extracted: ExcelArgsTuple) void {
+            inline for (0..ParamTypes.len) |i| {
+                freeArg(ParamTypes[i], extracted[i]);
+            }
+        }
+
+        // ================================================================
+        // Generated C-callable impl (dispatches to sync or async)
+        // ================================================================
+
         const Impl = switch (params.len) {
             0 => struct {
                 fn impl() callconv(.c) *xl.XLOPER12 {
-                    const result = func() catch return makeErrorValue();
-                    return wrapResult(result);
+                    if (is_async) {
+                        return asyncImpl(.{});
+                    }
+                    return callSync(.{});
                 }
             },
             1 => struct {
                 fn impl(a1: *xl.XLOPER12) callconv(.c) *xl.XLOPER12 {
-                    xl_helpers.debugLogFmt("{s}: called with 1 arg", .{name});
                     const arg1 = extractArg(params[0].type.?, a1) catch return makeErrorValue();
+                    if (is_async) {
+                        return asyncImpl(.{arg1});
+                    }
                     defer freeArg(params[0].type.?, arg1);
-                    const result = func(arg1) catch return makeErrorValue();
-                    return wrapResult(result);
+                    return callSync(.{arg1});
                 }
             },
             2 => struct {
                 fn impl(a1: *xl.XLOPER12, a2: *xl.XLOPER12) callconv(.c) *xl.XLOPER12 {
                     const arg1 = extractArg(params[0].type.?, a1) catch return makeErrorValue();
+                    const arg2 = extractArg(params[1].type.?, a2) catch |e| {
+                        freeArg(params[0].type.?, arg1);
+                        return if (e == error.OutOfMemory) makeErrorValue() else makeErrorValue();
+                    };
+                    if (is_async) return asyncImpl(.{ arg1, arg2 });
                     defer freeArg(params[0].type.?, arg1);
-                    const arg2 = extractArg(params[1].type.?, a2) catch return makeErrorValue();
                     defer freeArg(params[1].type.?, arg2);
-                    const result = func(arg1, arg2) catch return makeErrorValue();
-                    return wrapResult(result);
+                    return callSync(.{ arg1, arg2 });
                 }
             },
             3 => struct {
                 fn impl(a1: *xl.XLOPER12, a2: *xl.XLOPER12, a3: *xl.XLOPER12) callconv(.c) *xl.XLOPER12 {
                     const arg1 = extractArg(params[0].type.?, a1) catch return makeErrorValue();
+                    const arg2 = extractArg(params[1].type.?, a2) catch {
+                        freeArg(params[0].type.?, arg1);
+                        return makeErrorValue();
+                    };
+                    const arg3 = extractArg(params[2].type.?, a3) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        return makeErrorValue();
+                    };
+                    if (is_async) return asyncImpl(.{ arg1, arg2, arg3 });
                     defer freeArg(params[0].type.?, arg1);
-                    const arg2 = extractArg(params[1].type.?, a2) catch return makeErrorValue();
                     defer freeArg(params[1].type.?, arg2);
-                    const arg3 = extractArg(params[2].type.?, a3) catch return makeErrorValue();
                     defer freeArg(params[2].type.?, arg3);
-                    const result = func(arg1, arg2, arg3) catch return makeErrorValue();
-                    return wrapResult(result);
+                    return callSync(.{ arg1, arg2, arg3 });
                 }
             },
             4 => struct {
                 fn impl(a1: *xl.XLOPER12, a2: *xl.XLOPER12, a3: *xl.XLOPER12, a4: *xl.XLOPER12) callconv(.c) *xl.XLOPER12 {
                     const arg1 = extractArg(params[0].type.?, a1) catch return makeErrorValue();
+                    const arg2 = extractArg(params[1].type.?, a2) catch {
+                        freeArg(params[0].type.?, arg1);
+                        return makeErrorValue();
+                    };
+                    const arg3 = extractArg(params[2].type.?, a3) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        return makeErrorValue();
+                    };
+                    const arg4 = extractArg(params[3].type.?, a4) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        freeArg(params[2].type.?, arg3);
+                        return makeErrorValue();
+                    };
+                    if (is_async) return asyncImpl(.{ arg1, arg2, arg3, arg4 });
                     defer freeArg(params[0].type.?, arg1);
-                    const arg2 = extractArg(params[1].type.?, a2) catch return makeErrorValue();
                     defer freeArg(params[1].type.?, arg2);
-                    const arg3 = extractArg(params[2].type.?, a3) catch return makeErrorValue();
                     defer freeArg(params[2].type.?, arg3);
-                    const arg4 = extractArg(params[3].type.?, a4) catch return makeErrorValue();
                     defer freeArg(params[3].type.?, arg4);
-                    const result = func(arg1, arg2, arg3, arg4) catch return makeErrorValue();
-                    return wrapResult(result);
+                    return callSync(.{ arg1, arg2, arg3, arg4 });
                 }
             },
             5 => struct {
                 fn impl(a1: *xl.XLOPER12, a2: *xl.XLOPER12, a3: *xl.XLOPER12, a4: *xl.XLOPER12, a5: *xl.XLOPER12) callconv(.c) *xl.XLOPER12 {
                     const arg1 = extractArg(params[0].type.?, a1) catch return makeErrorValue();
+                    const arg2 = extractArg(params[1].type.?, a2) catch {
+                        freeArg(params[0].type.?, arg1);
+                        return makeErrorValue();
+                    };
+                    const arg3 = extractArg(params[2].type.?, a3) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        return makeErrorValue();
+                    };
+                    const arg4 = extractArg(params[3].type.?, a4) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        freeArg(params[2].type.?, arg3);
+                        return makeErrorValue();
+                    };
+                    const arg5 = extractArg(params[4].type.?, a5) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        freeArg(params[2].type.?, arg3);
+                        freeArg(params[3].type.?, arg4);
+                        return makeErrorValue();
+                    };
+                    if (is_async) return asyncImpl(.{ arg1, arg2, arg3, arg4, arg5 });
                     defer freeArg(params[0].type.?, arg1);
-                    const arg2 = extractArg(params[1].type.?, a2) catch return makeErrorValue();
                     defer freeArg(params[1].type.?, arg2);
-                    const arg3 = extractArg(params[2].type.?, a3) catch return makeErrorValue();
                     defer freeArg(params[2].type.?, arg3);
-                    const arg4 = extractArg(params[3].type.?, a4) catch return makeErrorValue();
                     defer freeArg(params[3].type.?, arg4);
-                    const arg5 = extractArg(params[4].type.?, a5) catch return makeErrorValue();
                     defer freeArg(params[4].type.?, arg5);
-                    const result = func(arg1, arg2, arg3, arg4, arg5) catch return makeErrorValue();
-                    return wrapResult(result);
+                    return callSync(.{ arg1, arg2, arg3, arg4, arg5 });
                 }
             },
             6 => struct {
                 fn impl(a1: *xl.XLOPER12, a2: *xl.XLOPER12, a3: *xl.XLOPER12, a4: *xl.XLOPER12, a5: *xl.XLOPER12, a6: *xl.XLOPER12) callconv(.c) *xl.XLOPER12 {
                     const arg1 = extractArg(params[0].type.?, a1) catch return makeErrorValue();
+                    const arg2 = extractArg(params[1].type.?, a2) catch {
+                        freeArg(params[0].type.?, arg1);
+                        return makeErrorValue();
+                    };
+                    const arg3 = extractArg(params[2].type.?, a3) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        return makeErrorValue();
+                    };
+                    const arg4 = extractArg(params[3].type.?, a4) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        freeArg(params[2].type.?, arg3);
+                        return makeErrorValue();
+                    };
+                    const arg5 = extractArg(params[4].type.?, a5) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        freeArg(params[2].type.?, arg3);
+                        freeArg(params[3].type.?, arg4);
+                        return makeErrorValue();
+                    };
+                    const arg6 = extractArg(params[5].type.?, a6) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        freeArg(params[2].type.?, arg3);
+                        freeArg(params[3].type.?, arg4);
+                        freeArg(params[4].type.?, arg5);
+                        return makeErrorValue();
+                    };
+                    if (is_async) return asyncImpl(.{ arg1, arg2, arg3, arg4, arg5, arg6 });
                     defer freeArg(params[0].type.?, arg1);
-                    const arg2 = extractArg(params[1].type.?, a2) catch return makeErrorValue();
                     defer freeArg(params[1].type.?, arg2);
-                    const arg3 = extractArg(params[2].type.?, a3) catch return makeErrorValue();
                     defer freeArg(params[2].type.?, arg3);
-                    const arg4 = extractArg(params[3].type.?, a4) catch return makeErrorValue();
                     defer freeArg(params[3].type.?, arg4);
-                    const arg5 = extractArg(params[4].type.?, a5) catch return makeErrorValue();
                     defer freeArg(params[4].type.?, arg5);
-                    const arg6 = extractArg(params[5].type.?, a6) catch return makeErrorValue();
                     defer freeArg(params[5].type.?, arg6);
-                    const result = func(arg1, arg2, arg3, arg4, arg5, arg6) catch return makeErrorValue();
-                    return wrapResult(result);
+                    return callSync(.{ arg1, arg2, arg3, arg4, arg5, arg6 });
                 }
             },
             7 => struct {
                 fn impl(a1: *xl.XLOPER12, a2: *xl.XLOPER12, a3: *xl.XLOPER12, a4: *xl.XLOPER12, a5: *xl.XLOPER12, a6: *xl.XLOPER12, a7: *xl.XLOPER12) callconv(.c) *xl.XLOPER12 {
                     const arg1 = extractArg(params[0].type.?, a1) catch return makeErrorValue();
+                    const arg2 = extractArg(params[1].type.?, a2) catch {
+                        freeArg(params[0].type.?, arg1);
+                        return makeErrorValue();
+                    };
+                    const arg3 = extractArg(params[2].type.?, a3) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        return makeErrorValue();
+                    };
+                    const arg4 = extractArg(params[3].type.?, a4) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        freeArg(params[2].type.?, arg3);
+                        return makeErrorValue();
+                    };
+                    const arg5 = extractArg(params[4].type.?, a5) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        freeArg(params[2].type.?, arg3);
+                        freeArg(params[3].type.?, arg4);
+                        return makeErrorValue();
+                    };
+                    const arg6 = extractArg(params[5].type.?, a6) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        freeArg(params[2].type.?, arg3);
+                        freeArg(params[3].type.?, arg4);
+                        freeArg(params[4].type.?, arg5);
+                        return makeErrorValue();
+                    };
+                    const arg7 = extractArg(params[6].type.?, a7) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        freeArg(params[2].type.?, arg3);
+                        freeArg(params[3].type.?, arg4);
+                        freeArg(params[4].type.?, arg5);
+                        freeArg(params[5].type.?, arg6);
+                        return makeErrorValue();
+                    };
+                    if (is_async) return asyncImpl(.{ arg1, arg2, arg3, arg4, arg5, arg6, arg7 });
                     defer freeArg(params[0].type.?, arg1);
-                    const arg2 = extractArg(params[1].type.?, a2) catch return makeErrorValue();
                     defer freeArg(params[1].type.?, arg2);
-                    const arg3 = extractArg(params[2].type.?, a3) catch return makeErrorValue();
                     defer freeArg(params[2].type.?, arg3);
-                    const arg4 = extractArg(params[3].type.?, a4) catch return makeErrorValue();
                     defer freeArg(params[3].type.?, arg4);
-                    const arg5 = extractArg(params[4].type.?, a5) catch return makeErrorValue();
                     defer freeArg(params[4].type.?, arg5);
-                    const arg6 = extractArg(params[5].type.?, a6) catch return makeErrorValue();
                     defer freeArg(params[5].type.?, arg6);
-                    const arg7 = extractArg(params[6].type.?, a7) catch return makeErrorValue();
                     defer freeArg(params[6].type.?, arg7);
-                    const result = func(arg1, arg2, arg3, arg4, arg5, arg6, arg7) catch return makeErrorValue();
-                    return wrapResult(result);
+                    return callSync(.{ arg1, arg2, arg3, arg4, arg5, arg6, arg7 });
                 }
             },
             8 => struct {
                 fn impl(a1: *xl.XLOPER12, a2: *xl.XLOPER12, a3: *xl.XLOPER12, a4: *xl.XLOPER12, a5: *xl.XLOPER12, a6: *xl.XLOPER12, a7: *xl.XLOPER12, a8: *xl.XLOPER12) callconv(.c) *xl.XLOPER12 {
                     const arg1 = extractArg(params[0].type.?, a1) catch return makeErrorValue();
+                    const arg2 = extractArg(params[1].type.?, a2) catch {
+                        freeArg(params[0].type.?, arg1);
+                        return makeErrorValue();
+                    };
+                    const arg3 = extractArg(params[2].type.?, a3) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        return makeErrorValue();
+                    };
+                    const arg4 = extractArg(params[3].type.?, a4) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        freeArg(params[2].type.?, arg3);
+                        return makeErrorValue();
+                    };
+                    const arg5 = extractArg(params[4].type.?, a5) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        freeArg(params[2].type.?, arg3);
+                        freeArg(params[3].type.?, arg4);
+                        return makeErrorValue();
+                    };
+                    const arg6 = extractArg(params[5].type.?, a6) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        freeArg(params[2].type.?, arg3);
+                        freeArg(params[3].type.?, arg4);
+                        freeArg(params[4].type.?, arg5);
+                        return makeErrorValue();
+                    };
+                    const arg7 = extractArg(params[6].type.?, a7) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        freeArg(params[2].type.?, arg3);
+                        freeArg(params[3].type.?, arg4);
+                        freeArg(params[4].type.?, arg5);
+                        freeArg(params[5].type.?, arg6);
+                        return makeErrorValue();
+                    };
+                    const arg8 = extractArg(params[7].type.?, a8) catch {
+                        freeArg(params[0].type.?, arg1);
+                        freeArg(params[1].type.?, arg2);
+                        freeArg(params[2].type.?, arg3);
+                        freeArg(params[3].type.?, arg4);
+                        freeArg(params[4].type.?, arg5);
+                        freeArg(params[5].type.?, arg6);
+                        freeArg(params[6].type.?, arg7);
+                        return makeErrorValue();
+                    };
+                    if (is_async) return asyncImpl(.{ arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8 });
                     defer freeArg(params[0].type.?, arg1);
-                    const arg2 = extractArg(params[1].type.?, a2) catch return makeErrorValue();
                     defer freeArg(params[1].type.?, arg2);
-                    const arg3 = extractArg(params[2].type.?, a3) catch return makeErrorValue();
                     defer freeArg(params[2].type.?, arg3);
-                    const arg4 = extractArg(params[3].type.?, a4) catch return makeErrorValue();
                     defer freeArg(params[3].type.?, arg4);
-                    const arg5 = extractArg(params[4].type.?, a5) catch return makeErrorValue();
                     defer freeArg(params[4].type.?, arg5);
-                    const arg6 = extractArg(params[5].type.?, a6) catch return makeErrorValue();
                     defer freeArg(params[5].type.?, arg6);
-                    const arg7 = extractArg(params[6].type.?, a7) catch return makeErrorValue();
                     defer freeArg(params[6].type.?, arg7);
-                    const arg8 = extractArg(params[7].type.?, a8) catch return makeErrorValue();
                     defer freeArg(params[7].type.?, arg8);
-                    const result = func(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8) catch return makeErrorValue();
-                    return wrapResult(result);
+                    return callSync(.{ arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8 });
                 }
             },
             else => @compileError("Unsupported parameter count (max 8)"),

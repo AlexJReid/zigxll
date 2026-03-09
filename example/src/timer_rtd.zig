@@ -53,8 +53,4 @@ pub const rtd_config: rtd.RtdConfig = .{
     .prog_id = "zigxll.rtd",
 };
 
-const TimerRtd = rtd.RtdServer(TimerHandler, rtd_config);
-
-comptime {
-    TimerRtd.exportDllFunctions();
-}
+pub const RtdServerType = rtd.RtdServer(TimerHandler, rtd_config);

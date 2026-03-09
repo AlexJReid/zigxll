@@ -15,6 +15,7 @@ const xl = xl_imports.xl;
 const xlvalue = @import("xlvalue.zig");
 const XLValue = xlvalue.XLValue;
 
+const xl_helpers = @import("xl_helpers.zig");
 const allocator = std.heap.c_allocator;
 
 /// Call xlfRtd from a UDF to subscribe to an RTD topic.
@@ -64,9 +65,36 @@ pub fn subscribe(comptime prog_id: []const u8, topics: []const []const u8) !*xl.
         return error.RtdCallFailed;
     }
 
-    // Copy result to heap with DLLFree flag so xlAutoFree12 cleans it up
+    // xlfRtd returns an XLOPER12 with xlbitXLFree — Excel owns the data.
+    // We must deep-copy any string data so xlAutoFree12 can safely free it.
     const heap_result = try allocator.create(xl.XLOPER12);
-    heap_result.* = result;
-    heap_result.xltype |= xl.xlbitDLLFree;
+    const base_type = result.xltype & 0xFFF;
+
+    if (base_type == xl.xltypeStr) {
+        // Deep-copy the string buffer so we own it
+        if (result.val.str) |str_ptr| {
+            const len: usize = @intCast(str_ptr[0]);
+            const total = len + 2; // length prefix + chars + null
+            const new_buf = try allocator.alloc(u16, total);
+            @memcpy(new_buf, str_ptr[0..total]);
+            heap_result.* = .{
+                .xltype = xl.xltypeStr | xl.xlbitDLLFree,
+                .val = .{ .str = new_buf.ptr },
+            };
+        } else {
+            heap_result.* = result;
+            heap_result.xltype = xl.xltypeStr | xl.xlbitDLLFree;
+        }
+    } else {
+        // Numeric/bool/error types have no pointers — shallow copy is fine
+        heap_result.* = result;
+        heap_result.xltype = base_type | xl.xlbitDLLFree;
+    }
+
+    // Free Excel's original allocation
+    if ((result.xltype & xl.xlbitXLFree) != 0) {
+        xl_helpers.xlFree(&result);
+    }
+
     return heap_result;
 }

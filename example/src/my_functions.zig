@@ -116,6 +116,7 @@ pub const timer = ExcelFunction(.{
     .name = "ZigXLL.TIMER",
     .description = "Live ticking counter (RTD wrapper)",
     .category = "Zig Functions",
+    .thread_safe = false,
     .params = &[_]ParamMeta{},
     .func = timerFunc,
 });
