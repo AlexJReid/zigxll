@@ -335,9 +335,25 @@ fn extractTopicStrings(psa: *SAFEARRAY) []const []const u8 {
 
     for (0..count) |i| {
         var idx: LONG = lbound + @as(LONG, @intCast(i));
-        var bstr: ?[*:0]const u16 = null;
-        const hr = SafeArrayGetElement(psa, @ptrCast(&idx), @ptrCast(&bstr));
-        if (hr != S_OK or bstr == null) {
+
+        // Excel passes topic strings as a SAFEARRAY of VARIANTs (each containing a VT_BSTR).
+        // We must extract the full VARIANT first, then pull the BSTR out of it.
+        // Reading directly into a BSTR pointer would overflow the stack since
+        // sizeof(VARIANT) > sizeof(pointer).
+        var elem: VARIANT = undefined;
+        VariantInit(&elem);
+        const hr = SafeArrayGetElement(psa, @ptrCast(&idx), @ptrCast(&elem));
+        if (hr != S_OK) {
+            result[i] = alloc.dupe(u8, "") catch "";
+            continue;
+        }
+
+        const bstr: ?[*:0]const u16 = if (elem.vt == VT_BSTR)
+            @ptrCast(elem.data.bstrval)
+        else
+            null;
+
+        if (bstr == null) {
             result[i] = alloc.dupe(u8, "") catch "";
             continue;
         }
