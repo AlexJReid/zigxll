@@ -18,6 +18,11 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+
     - name: Setup Zig
       uses: mlugg/setup-zig@v2
       with:
