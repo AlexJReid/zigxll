@@ -194,17 +194,6 @@ fn addNativeMsvcPaths(b: *std.Build, compile: *std.Build.Step.Compile) void {
     compile.addSystemIncludePath(.{ .cwd_relative = um_inc_dir });
     compile.addSystemIncludePath(.{ .cwd_relative = shared_inc_dir });
 
-    const libc_conf = b.fmt(
-        "include_dir={s}\n" ++
-        "sys_include_dir={s}\n" ++
-        "crt_dir={s}\n" ++
-        "msvc_lib_dir={s}\n" ++
-        "kernel32_lib_dir={s}\n" ++
-        "gcc_dir=\n"
-    , .{ ucrt_inc_dir, vctools_inc, ucrt_lib_dir, msvc_lib_dir, kernel32_lib_dir });
-
-    const libc_file = b.addWriteFiles().add("libc.conf", libc_conf);
-    compile.setLibCFile(libc_file);
 }
 
 /// When cross-compiling from Mac/Linux, add xwin system include paths to a module
