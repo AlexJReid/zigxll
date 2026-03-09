@@ -16,10 +16,10 @@ Zig's C interop and comptime make the SDK usable. You write normal Zig functions
 
 What you get:
 
-- No boilerplate - define functions with `ExcelFunction()`, framework handles the rest
+- No boilerplate - define functions with `ExcelFunction()` and macros with `ExcelMacro()`, framework handles the rest
 - Type-safe conversions between Zig types and XLOPER12
 - UTF-8 strings (framework handles UTF-16 conversion)
-- Zig errors become `#VALUE!` in Excel
+- Zig errors become `#VALUE!` in Excel. For specific errors (`#N/A`, `#DIV/0!`, etc.), return `XLValue.na()`, `XLValue.errDiv0()`, etc.
 - Thread-safe by default (MTR)
 - Cross-compilation from Mac/Linux via [xwin](https://jake-shadle.github.io/xwin/)
 - Async functions - add `.async = true` to run on a thread pool with automatic caching. See [function docs](./userdocs/functions.md#async-functions)
@@ -114,7 +114,7 @@ Output lands in `zig-out/lib/my_functions.xll`. Double-click to load in Excel.
 
 ## Documentation
 
-- [Creating functions](./userdocs/functions.md) - types, options, returning strings/arrays, namespacing
+- [Functions and macros](./userdocs/functions.md) - types, options, returning strings/arrays, macros, error helpers
 - [RTD servers](./userdocs/rtd-servers.md) - pushing live data to Excel, using RTD from UDFs
 - [How it works](./userdocs/how-it-works.md) - comptime code generation, architecture
 

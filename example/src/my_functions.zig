@@ -59,7 +59,7 @@ pub const bs_call = ExcelFunction(.{
 });
 
 fn blackScholesCall(S: f64, K: f64, T: f64, r: f64, sigma: f64) !f64 {
-    const d1 = (std.math.log(f64, std.math.e, S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * @sqrt(T));
+    const d1 = (@log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * @sqrt(T));
     const d2 = d1 - sigma * @sqrt(T);
 
     const N_d1 = normalCDF(d1);
@@ -84,7 +84,7 @@ pub const bs_put = ExcelFunction(.{
 });
 
 fn blackScholesPut(S: f64, K: f64, T: f64, r: f64, sigma: f64) !f64 {
-    const d1 = (std.math.log(f64, std.math.e, S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * @sqrt(T));
+    const d1 = (@log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * @sqrt(T));
     const d2 = d1 - sigma * @sqrt(T);
 
     const N_d1 = normalCDF(-d1);
@@ -104,11 +104,26 @@ fn normalCDF(x: f64) f64 {
 
     if (x >= 0.0) {
         const t = 1.0 / (1.0 + b0 * x);
-        const poly = b1 * t + b2 * t * t + b3 * std.math.pow(f64, t, 3) + b4 * std.math.pow(f64, t, 4) + b5 * std.math.pow(f64, t, 5);
+        const t2 = t * t;
+        const t3 = t2 * t;
+        const poly = b1 * t + b2 * t2 + b3 * t3 + b4 * t2 * t2 + b5 * t2 * t3;
         return 1.0 - poly * @exp(-x * x / 2.0) / @sqrt(2.0 * std.math.pi);
     } else {
         return 1.0 - normalCDF(-x);
     }
+}
+
+// Always returns #VALUE! error
+pub const always_err = ExcelFunction(.{
+    .name = "ZigXLL.ALWAYSERR",
+    .description = "Always returns #VALUE!",
+    .category = "Zig Functions",
+    .params = &[_]ParamMeta{},
+    .func = alwaysErrFunc,
+});
+
+fn alwaysErrFunc() !*xl.XLOPER12 {
+    return xll.XLValue.errValue();
 }
 
 // RTD wrapper — use =TIMER() instead of =RTD("zigxll.rtd", , "tick")

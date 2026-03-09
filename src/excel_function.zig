@@ -544,7 +544,6 @@ pub fn ExcelFunction(comptime meta: anytype) type {
 
         fn extractArg(comptime T: type, xloper: *xl.XLOPER12) !T {
             const val = XLValue.fromXLOPER12(allocator, xloper.*, false);
-            xl_helpers.debugLogFmt("extractArg: xltype=0x{x} want={s}", .{ xloper.xltype, @typeName(T) });
 
             // Check if T is an optional type
             const type_info = @typeInfo(T);

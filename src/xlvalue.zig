@@ -155,6 +155,39 @@ pub const XLValue = struct {
         };
     }
 
+    // Static error values — return directly from ExcelFunction with return type !*xl.XLOPER12.
+    // No xlbitDLLFree needed since xlAutoFree12 skips values without it.
+
+    fn staticErr(err_code: c_int) *xl.XLOPER12 {
+        const S = struct {
+            var null_val: xl.XLOPER12 = .{ .xltype = xl.xltypeErr, .val = .{ .err = xl.xlerrNull } };
+            var div0_val: xl.XLOPER12 = .{ .xltype = xl.xltypeErr, .val = .{ .err = xl.xlerrDiv0 } };
+            var value_val: xl.XLOPER12 = .{ .xltype = xl.xltypeErr, .val = .{ .err = xl.xlerrValue } };
+            var ref_val: xl.XLOPER12 = .{ .xltype = xl.xltypeErr, .val = .{ .err = xl.xlerrRef } };
+            var name_val: xl.XLOPER12 = .{ .xltype = xl.xltypeErr, .val = .{ .err = xl.xlerrName } };
+            var num_val: xl.XLOPER12 = .{ .xltype = xl.xltypeErr, .val = .{ .err = xl.xlerrNum } };
+            var na_val: xl.XLOPER12 = .{ .xltype = xl.xltypeErr, .val = .{ .err = xl.xlerrNA } };
+        };
+        return switch (err_code) {
+            xl.xlerrNull => &S.null_val,
+            xl.xlerrDiv0 => &S.div0_val,
+            xl.xlerrValue => &S.value_val,
+            xl.xlerrRef => &S.ref_val,
+            xl.xlerrName => &S.name_val,
+            xl.xlerrNum => &S.num_val,
+            xl.xlerrNA => &S.na_val,
+            else => &S.value_val,
+        };
+    }
+
+    pub fn na() *xl.XLOPER12 { return staticErr(xl.xlerrNA); }
+    pub fn errValue() *xl.XLOPER12 { return staticErr(xl.xlerrValue); }
+    pub fn errDiv0() *xl.XLOPER12 { return staticErr(xl.xlerrDiv0); }
+    pub fn errRef() *xl.XLOPER12 { return staticErr(xl.xlerrRef); }
+    pub fn errName() *xl.XLOPER12 { return staticErr(xl.xlerrName); }
+    pub fn errNum() *xl.XLOPER12 { return staticErr(xl.xlerrNum); }
+    pub fn errNull() *xl.XLOPER12 { return staticErr(xl.xlerrNull); }
+
     // Type checking
     pub fn type_val(self: *const XLValue) xl.int {
         return self.m_val.xltype;

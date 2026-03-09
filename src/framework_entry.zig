@@ -34,6 +34,22 @@ pub fn getAllFunctions() []const type {
     return funcs;
 }
 
+// Discover all macros from user's modules at comptime
+pub fn getAllMacros() []const type {
+    const root = @import("root");
+    if (!@hasDecl(root, "user_functions")) {
+        @compileError("Root module must have a 'user_functions' declaration with 'function_modules' tuple");
+    }
+    const user_functions = root.user_functions;
+
+    comptime var macros: []const type = &.{};
+    inline for (user_functions.function_modules) |module| {
+        const module_macros = function_discovery.getAllMacros(module);
+        macros = macros ++ module_macros;
+    }
+    return macros;
+}
+
 /// Initialize XLL - auto-discover and register
 pub fn xlAutoOpen() callconv(.c) c_int {
     const build_options = @import("build_options");
@@ -62,6 +78,18 @@ pub fn xlAutoOpen() callconv(.c) c_int {
         };
     }
     xl_helpers.debugLogFmt("Successfully registered {d} functions", .{all_functions.len});
+
+    // Register all discovered macros
+    const all_macros = comptime getAllMacros();
+    inline for (all_macros) |MacroType| {
+        registerMacro(MacroType, &xDLL, reg_allocator) catch |err| {
+            xl_helpers.debugLogFmt("Failed to register macro '{s}': {s}", .{ MacroType.excel_name, @errorName(err) });
+            return xl.xlretFailed;
+        };
+    }
+    if (all_macros.len > 0) {
+        xl_helpers.debugLogFmt("Successfully registered {d} macros", .{all_macros.len});
+    }
 
     // Auto-register RTD servers if user module declares them
     const user_mod = @import("root").user_functions;
@@ -161,6 +189,40 @@ fn registerFunction(comptime FuncType: type, xll_path: *xl.XLOPER12, allocator: 
     }
 
     xl_helpers.debugLogFmt("Registered Excel function: {s} ({s})", .{ FuncType.excel_name, FuncType.excel_type_string });
+}
+
+fn registerMacro(comptime MacroType: type, xll_path: *xl.XLOPER12, allocator: std.mem.Allocator) !void {
+    var proc_name_xl = try XLValue.fromUtf8String(allocator, MacroType.excel_export_name);
+    var type_string_xl = try XLValue.fromUtf8String(allocator, MacroType.excel_type_string);
+    var func_name_xl = try XLValue.fromUtf8String(allocator, MacroType.excel_name);
+    var arg_names_xl = try XLValue.fromUtf8String(allocator, "");
+    var func_type_xl = try XLValue.fromUtf8String(allocator, "2"); // 2 = macro/command
+    var category_xl = try XLValue.fromUtf8String(allocator, MacroType.excel_category);
+    var description_xl = try XLValue.fromUtf8String(allocator, MacroType.excel_description);
+    var empty_xl = try XLValue.fromUtf8String(allocator, "");
+
+    var args: [11][*c]xl.XLOPER12 = undefined;
+    args[0] = xll_path;
+    args[1] = &proc_name_xl.m_val;
+    args[2] = &type_string_xl.m_val;
+    args[3] = &func_name_xl.m_val;
+    args[4] = &arg_names_xl.m_val;
+    args[5] = &func_type_xl.m_val;
+    args[6] = &category_xl.m_val;
+    args[7] = &empty_xl.m_val; // Shortcut
+    args[8] = &empty_xl.m_val; // Help topic
+    args[9] = &description_xl.m_val;
+    args[10] = &empty_xl.m_val; // Trailing empty
+
+    var result: xl.XLOPER12 = undefined;
+    const ret = xl.Excel12v(xl.xlfRegister, &result, 11, @ptrCast(&args));
+    defer xl_helpers.xlFree(&result);
+
+    if (ret != xl.xlretSuccess) {
+        return error.RegistrationFailed;
+    }
+
+    xl_helpers.debugLogFmt("Registered Excel macro: {s}", .{MacroType.excel_name});
 }
 
 pub fn xlAutoClose() callconv(.c) c_int {

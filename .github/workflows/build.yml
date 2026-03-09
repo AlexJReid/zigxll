@@ -27,7 +27,7 @@ jobs:
       run: zig build test --summary all
 
     - name: Build framework XLL
-      run: zig build
+      run: zig build --release=fast
 
     - name: Upload framework XLL artifact
       uses: actions/upload-artifact@v4
@@ -38,7 +38,7 @@ jobs:
 
     - name: Build example XLL
       working-directory: example
-      run: zig build
+      run: zig build --release=fast
 
     - name: Upload example XLL artifact
       uses: actions/upload-artifact@v4

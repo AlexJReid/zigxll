@@ -96,6 +96,31 @@ Supported optional types: `?f64`, `?bool`, `?[]const u8`.
 
 All return types are wrapped with `!T`. Errors automatically become `#VALUE!` in Excel.
 
+### Returning specific Excel errors
+
+For functions returning `!*xl.XLOPER12`, use the static error helpers on `XLValue`:
+
+```zig
+const XLValue = xll.XLValue;
+
+fn safeDivideImpl(a: f64, b: f64) !*xl.XLOPER12 {
+    if (b == 0) return XLValue.errDiv0();
+    // ... normal return via wrapResult handled by framework
+}
+```
+
+| Helper | Excel error |
+|---|---|
+| `XLValue.na()` | `#N/A` |
+| `XLValue.errValue()` | `#VALUE!` |
+| `XLValue.errDiv0()` | `#DIV/0!` |
+| `XLValue.errRef()` | `#REF!` |
+| `XLValue.errName()` | `#NAME?` |
+| `XLValue.errNum()` | `#NUM!` |
+| `XLValue.errNull()` | `#NULL!` |
+
+These are static singletons — no allocation, safe to return from any code path.
+
 ## Returning strings
 
 Allocate the result with `std.heap.c_allocator`. The framework marks it with `xlbitDLLFree` and Excel calls `xlAutoFree12` to free it:
@@ -257,6 +282,49 @@ Async functions run on a shared thread pool (4 workers). If all workers are busy
 ### Interaction with thread_safe
 
 Async functions are always registered as non-thread-safe (`thread_safe` is forced to `false`). This is because the initial call uses `xlfRtd` which must run on Excel's main thread. The actual computation runs on the thread pool regardless.
+
+## Macros (commands)
+
+Excel macros are commands that perform actions (show dialogs, modify cells, etc.) rather than returning values. Unlike worksheet functions, macros can call Excel command-equivalent C API functions like `xlcAlert`, `xlcSelect`, etc.
+
+Define macros using `ExcelMacro()`:
+
+```zig
+const xll = @import("xll");
+const xl = xll.xl;
+const XLValue = xll.XLValue;
+const ExcelMacro = xll.ExcelMacro;
+
+const allocator = @import("std").heap.c_allocator;
+
+pub const hello = ExcelMacro(.{
+    .name = "MyAddin.Hello",
+    .description = "Show a greeting",
+    .category = "My Macros",
+    .func = helloImpl,
+});
+
+fn helloImpl() !void {
+    var msg = try XLValue.fromUtf8String(allocator, "Hello from Zig!");
+    defer msg.deinit();
+    _ = xl.Excel12f(xl.xlcAlert, null, 1, &msg.m_val);
+}
+```
+
+### ExcelMacro options
+
+| Field | Required | Default | Notes |
+|---|---|---|---|
+| `name` | yes | — | Macro name as it appears in Excel. Dots allowed for namespacing. |
+| `func` | yes | — | Must be `fn () !void` or `fn () void`. |
+| `description` | no | `""` | Shown in Excel's macro dialog. |
+| `category` | no | `"General"` | Groups the macro in Excel's UI. |
+
+Macros are discovered alongside functions from the same `function_modules` tuple — no separate wiring needed.
+
+### Running macros
+
+Macros appear in Excel's macro dialog (Alt+F8). They can also be assigned to buttons, shapes, or keyboard shortcuts within Excel.
 
 ## Limits
 
