@@ -152,6 +152,10 @@ Uses the **Microsoft Excel 2013 XLL SDK** headers and libraries, included in `ex
 
 By using this software you agree to the EULA specified by Microsoft in the above download.
 
+## Commercial and Support
+
+I can build an Excel add-in for you. Drop me an [email](mailto:alex@lexvica.com).
+
 ## License
 
 [MIT](./LICENSE)
