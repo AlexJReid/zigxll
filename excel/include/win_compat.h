@@ -8,24 +8,36 @@
 #ifndef WIN_COMPAT_H
 #define WIN_COMPAT_H
 
-#include <stddef.h>
-#include <stdint.h>
+/* Avoid <stdint.h>/<stddef.h> — on native MSVC they pull in vcruntime.h
+ * which uses __int64 and other constructs that Zig's @cImport (clang) cannot parse. */
+
+/* size_t for FRAMEWRK.H */
+#ifdef _WIN64
+typedef unsigned long long size_t;
+#else
+typedef unsigned long size_t;
+#endif
 
 /* Basic integer types */
-typedef int32_t INT32;
-typedef uint32_t UINT32;
-typedef uint32_t DWORD;
-typedef uint16_t WORD;
-typedef uint8_t BYTE;
+typedef int INT32;
+typedef unsigned int UINT32;
+typedef unsigned int DWORD;
+typedef unsigned short WORD;
+typedef unsigned char BYTE;
 /* BOOL is defined by xlcall.h as INT32 */
 typedef long LONG;
 
-/* Pointer-sized types */
-typedef uintptr_t DWORD_PTR;
-typedef uintptr_t ULONG_PTR;
+/* Pointer-sized types — always targeting x86_64 */
+#ifdef _WIN64
+typedef unsigned long long DWORD_PTR;
+typedef unsigned long long ULONG_PTR;
+#else
+typedef unsigned long DWORD_PTR;
+typedef unsigned long ULONG_PTR;
+#endif
 
 /* Wide character types */
-typedef uint16_t WCHAR;
+typedef unsigned short WCHAR;
 typedef WCHAR* LPWSTR;
 typedef const WCHAR* LPCWSTR;
 
