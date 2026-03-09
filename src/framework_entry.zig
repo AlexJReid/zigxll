@@ -15,7 +15,7 @@ pub const async_handler = @import("async_handler.zig");
 const excel_allocator = std.heap.c_allocator;
 var initialized = false;
 
-const framework_version = "0.2.4";
+const framework_version = @import("build_options").framework_version;
 
 // Discover all functions from user's modules at comptime
 // Note: This expects @import("root") to have a `user_functions` declaration

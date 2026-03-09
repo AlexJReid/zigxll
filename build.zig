@@ -25,6 +25,7 @@ pub fn build(b: *std.Build) void {
     // Build test XLL for framework development - simple direct build
     const framework_build_options = b.addOptions();
     framework_build_options.addOption([]const u8, "xll_name", "zigxll (framework test build)");
+    framework_build_options.addOption([]const u8, "framework_version", @import("build.zig.zon").version);
 
     const xll = b.addLibrary(.{
         .name = "zigxll",
@@ -92,9 +93,10 @@ pub fn buildXll(
     const target = options.target;
     const optimize = options.optimize;
 
-    // Create build options to pass XLL name to framework
+    // Create build options to pass XLL name and version to framework
     const build_options = b.addOptions();
     build_options.addOption([]const u8, "xll_name", options.name);
+    build_options.addOption([]const u8, "framework_version", @import("build.zig.zon").version);
 
     // Get xll dependency
     const xll_dep = b.dependency("xll", .{});
