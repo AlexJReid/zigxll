@@ -10,9 +10,12 @@
 // Your Handler should provide the following event handlers/lifecycle hooks:
 //   fn onStart(ctx: *RtdContext) void
 //   fn onConnect(ctx: *RtdContext, topic_id: i32, topic_count: usize) void
+//   fn onConnectBatch(ctx: *RtdContext, topic_ids: []const i32) void   // optional — called in RefreshData with all new connects since last refresh
 //   fn onDisconnect(ctx: *RtdContext, topic_id: i32, topic_count: usize) void
 //   fn onRefreshValue(ctx: *RtdContext, topic_id: i32) RtdValue
 //   fn onTerminate(ctx: *RtdContext) void
+//
+// Topic strings are available via ctx.topics.get(topic_id).?.strings
 //
 // RtdContext gives access to: update_event (for UpdateNotify), topics, and
 // a user_data pointer for your own state.
@@ -167,8 +170,12 @@ const DISPPARAMS = extern struct {
 
 extern "oleaut32" fn SafeArrayCreate(vt: u16, cDims: c_uint, rgsabound: [*]SAFEARRAYBOUND) callconv(.c) ?*SAFEARRAY;
 extern "oleaut32" fn SafeArrayPutElement(psa: *SAFEARRAY, rgIndices: [*]LONG, pv: *anyopaque) callconv(.c) HRESULT;
+extern "oleaut32" fn SafeArrayGetElement(psa: *SAFEARRAY, rgIndices: [*]LONG, pv: *anyopaque) callconv(.c) HRESULT;
+extern "oleaut32" fn SafeArrayGetUBound(psa: *SAFEARRAY, nDim: c_uint, plUbound: *LONG) callconv(.c) HRESULT;
+extern "oleaut32" fn SafeArrayGetLBound(psa: *SAFEARRAY, nDim: c_uint, plLbound: *LONG) callconv(.c) HRESULT;
 extern "oleaut32" fn VariantInit(pvarg: *VARIANT) callconv(.c) void;
 extern "oleaut32" fn SysAllocStringLen(psz: ?[*]const u16, len: c_uint) callconv(.c) ?[*:0]u16;
+extern "oleaut32" fn SysStringLen(bstr: ?[*:0]const u16) callconv(.c) c_uint;
 
 extern "kernel32" fn OutputDebugStringA(lpOutputString: [*:0]const u8) callconv(.c) void;
 
@@ -260,20 +267,23 @@ pub const IRTDUpdateEvent = extern struct {
 // ============================================================================
 
 pub const TopicEntry = struct {
-    active: bool = false,
-    topic_id: LONG = 0,
     dirty: bool = false,
+    /// Topic strings passed by Excel in ConnectData (UTF-8, owned by the map).
+    strings: []const []const u8 = &.{},
 };
 
-pub const MAX_TOPICS = 16384;
+const TopicMap = std.AutoHashMap(LONG, TopicEntry);
 
 // ============================================================================
 // RtdContext — passed to handler callbacks
 // ============================================================================
 
+const PendingConnectList = std.ArrayListUnmanaged(LONG);
+
 pub const RtdContext = struct {
     update_event: ?*IRTDUpdateEvent = null,
-    topics: [MAX_TOPICS]TopicEntry = [_]TopicEntry{.{}} ** MAX_TOPICS,
+    topics: TopicMap = TopicMap.init(std.heap.c_allocator),
+    pending_connects: PendingConnectList = .empty,
     topic_count: usize = 0,
     user_data: ?*anyopaque = null,
 
@@ -286,11 +296,72 @@ pub const RtdContext = struct {
 
     /// Mark all active topics as dirty.
     pub fn markAllDirty(self: *RtdContext) void {
-        for (&self.topics) |*t| {
-            if (t.active) t.dirty = true;
+        var it = self.topics.iterator();
+        while (it.next()) |entry| {
+            entry.value_ptr.dirty = true;
         }
     }
+
+    pub fn deinit(self: *RtdContext) void {
+        var it = self.topics.iterator();
+        while (it.next()) |entry| {
+            freeTopicStrings(entry.value_ptr.strings);
+        }
+        self.topics.deinit();
+        self.pending_connects.deinit(std.heap.c_allocator);
+    }
 };
+
+fn freeTopicStrings(strings: []const []const u8) void {
+    for (strings) |s| {
+        std.heap.c_allocator.free(s);
+    }
+    std.heap.c_allocator.free(strings);
+}
+
+/// Extract topic strings from the SAFEARRAY that Excel passes to ConnectData.
+/// Returns owned UTF-8 slices. Caller must free with freeTopicStrings().
+fn extractTopicStrings(psa: *SAFEARRAY) []const []const u8 {
+    const alloc = std.heap.c_allocator;
+
+    var lbound: LONG = 0;
+    var ubound: LONG = -1;
+    _ = SafeArrayGetLBound(psa, 1, &lbound);
+    _ = SafeArrayGetUBound(psa, 1, &ubound);
+    if (ubound < lbound) return &.{};
+
+    const count: usize = @intCast(ubound - lbound + 1);
+    const result = alloc.alloc([]const u8, count) catch return &.{};
+
+    for (0..count) |i| {
+        var idx: LONG = lbound + @as(LONG, @intCast(i));
+        var bstr: ?[*:0]const u16 = null;
+        const hr = SafeArrayGetElement(psa, @ptrCast(&idx), @ptrCast(&bstr));
+        if (hr != S_OK or bstr == null) {
+            result[i] = alloc.dupe(u8, "") catch "";
+            continue;
+        }
+        const len = SysStringLen(bstr);
+        const utf16 = bstr.?[0..len];
+        // Convert UTF-16 to UTF-8
+        const utf8_len = std.unicode.calcUtf8Len(utf16) catch 0;
+        if (utf8_len == 0) {
+            result[i] = alloc.dupe(u8, "") catch "";
+            continue;
+        }
+        const buf = alloc.alloc(u8, utf8_len) catch {
+            result[i] = alloc.dupe(u8, "") catch "";
+            continue;
+        };
+        const written = std.unicode.utf16LeToUtf8(buf, utf16) catch 0;
+        if (written < buf.len) {
+            result[i] = alloc.realloc(buf, written) catch buf[0..written];
+        } else {
+            result[i] = buf;
+        }
+    }
+    return result;
+}
 
 // ============================================================================
 // RtdServer — generic COM RTD server parameterized by Handler
@@ -383,6 +454,7 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
                 if (s.ctx.update_event) |evt| {
                     _ = evt.vtable.Release(@ptrCast(evt));
                 }
+                s.ctx.deinit();
                 std.heap.c_allocator.destroy(s);
                 std.heap.c_allocator.destroy(obj);
                 _ = @atomicRmw(i32, &g_object_count, .Sub, 1, .monotonic);
@@ -446,17 +518,21 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
                     if (params.cArgs < 3) return E_FAIL;
                     const topic_id: LONG = args[2].data.lval;
 
-                    const s = getObj(self_opaque).getState();
-                    for (&s.ctx.topics) |*t| {
-                        if (!t.active) {
-                            t.active = true;
-                            t.topic_id = topic_id;
-                            t.dirty = true;
-                            s.ctx.topic_count += 1;
-                            break;
-                        }
-                    }
+                    // args[1] is the SAFEARRAY of topic strings
+                    const topic_strings = if (args[1].vt == (VT_ARRAY | VT_VARIANT) or args[1].vt == (VT_ARRAY | VT_BSTR))
+                        extractTopicStrings(@ptrCast(@alignCast(args[1].data.ptr orelse &.{})))
+                    else
+                        @as([]const []const u8, &.{});
 
+                    const s = getObj(self_opaque).getState();
+                    s.ctx.topics.put(topic_id, .{ .dirty = true, .strings = topic_strings }) catch {
+                        freeTopicStrings(topic_strings);
+                        return E_FAIL;
+                    };
+                    s.ctx.topic_count = s.ctx.topics.count();
+
+                    // Buffer for batch notification; also call onConnect for immediate per-topic handling
+                    s.ctx.pending_connects.append(std.heap.c_allocator, topic_id) catch {};
                     s.handler.onConnect(&s.ctx, topic_id, s.ctx.topic_count);
 
                     const result: *VARIANT = @ptrCast(@alignCast(pVarResult));
@@ -522,9 +598,20 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
         fn refreshData(self_opaque: *anyopaque, topic_count: *LONG, parray_out: *?*SAFEARRAY) callconv(.winapi) HRESULT {
             const s = getObj(self_opaque).getState();
 
+            // Flush pending connects as a batch
+            if (s.ctx.pending_connects.items.len > 0) {
+                if (@hasDecl(Handler, "onConnectBatch")) {
+                    s.handler.onConnectBatch(&s.ctx, s.ctx.pending_connects.items);
+                }
+                s.ctx.pending_connects.clearRetainingCapacity();
+            }
+
             var dirty_count: ULONG = 0;
-            for (&s.ctx.topics) |*t| {
-                if (t.active and t.dirty) dirty_count += 1;
+            {
+                var it = s.ctx.topics.iterator();
+                while (it.next()) |entry| {
+                    if (entry.value_ptr.dirty) dirty_count += 1;
+                }
             }
 
             topic_count.* = @intCast(dirty_count);
@@ -540,19 +627,21 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
             const psa = SafeArrayCreate(VT_VARIANT, 2, &bounds) orelse return E_FAIL;
 
             var row: LONG = 0;
-            for (&s.ctx.topics) |*t| {
-                if (t.active and t.dirty) {
-                    t.dirty = false;
+            var it = s.ctx.topics.iterator();
+            while (it.next()) |entry| {
+                if (entry.value_ptr.dirty) {
+                    entry.value_ptr.dirty = false;
+                    const tid = entry.key_ptr.*;
 
                     var id_var: VARIANT = undefined;
                     VariantInit(&id_var);
                     id_var.vt = VT_I4;
-                    id_var.data = .{ .lval = t.topic_id };
+                    id_var.data = .{ .lval = tid };
                     var idx0 = [2]LONG{ 0, row };
                     _ = SafeArrayPutElement(psa, &idx0, @ptrCast(&id_var));
 
                     var val_var: VARIANT = undefined;
-                    rtdValueToVariant(s.handler.onRefreshValue(&s.ctx, t.topic_id), &val_var);
+                    rtdValueToVariant(s.handler.onRefreshValue(&s.ctx, tid), &val_var);
                     var idx1 = [2]LONG{ 1, row };
                     _ = SafeArrayPutElement(psa, &idx1, @ptrCast(&val_var));
 
@@ -568,13 +657,10 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
             debugLog("DisconnectData: TopicID={d}", .{topic_id});
             const s = getObj(self_opaque).getState();
 
-            for (&s.ctx.topics) |*t| {
-                if (t.active and t.topic_id == topic_id) {
-                    t.active = false;
-                    s.ctx.topic_count -= 1;
-                    break;
-                }
+            if (s.ctx.topics.fetchRemove(topic_id)) |entry| {
+                freeTopicStrings(entry.value.strings);
             }
+            s.ctx.topic_count = s.ctx.topics.count();
             s.handler.onDisconnect(&s.ctx, topic_id, s.ctx.topic_count);
             return S_OK;
         }

@@ -21,9 +21,11 @@ const allocator = std.heap.c_allocator;
 // ConnectData runs synchronously on the same thread, so this is safe.
 pub var pending_connect_key: ?[]const u8 = null;
 
+const TopicKeyMap = std.AutoHashMap(i32, []const u8);
+
 pub const AsyncHandler = struct {
-    // Map topic_id → cache key.  Parallel array to RtdContext.topics.
-    topic_keys: [rtd.MAX_TOPICS]?[]const u8 = [_]?[]const u8{null} ** rtd.MAX_TOPICS,
+    // Map topic_id → cache key.
+    topic_keys: TopicKeyMap = TopicKeyMap.init(allocator),
 
     pub fn onStart(_: *AsyncHandler, ctx: *rtd.RtdContext) void {
         // Stash pointers so async workers can mark dirty + call UpdateNotify
@@ -31,44 +33,29 @@ pub const AsyncHandler = struct {
         async_infra.global_rtd_context = ctx;
     }
 
-    pub fn onConnect(self: *AsyncHandler, ctx: *rtd.RtdContext, topic_id: i32, _: usize) void {
+    pub fn onConnect(self: *AsyncHandler, _: *rtd.RtdContext, topic_id: i32, _: usize) void {
         // Pick up the pending key set by the UDF
         const key = pending_connect_key orelse return;
         pending_connect_key = null;
 
-        // Find the slot that was just assigned this topic_id
-        for (ctx.topics, 0..) |t, i| {
-            if (t.active and t.topic_id == topic_id) {
-                self.topic_keys[i] = allocator.dupe(u8, key) catch null;
-                break;
-            }
+        const owned = allocator.dupe(u8, key) catch return;
+        self.topic_keys.put(topic_id, owned) catch {
+            allocator.free(owned);
+        };
+    }
+
+    pub fn onDisconnect(self: *AsyncHandler, _: *rtd.RtdContext, topic_id: i32, _: usize) void {
+        if (self.topic_keys.fetchRemove(topic_id)) |entry| {
+            allocator.free(@constCast(entry.value));
         }
     }
 
-    pub fn onDisconnect(self: *AsyncHandler, ctx: *rtd.RtdContext, topic_id: i32, _: usize) void {
-        for (ctx.topics, 0..) |t, i| {
-            // The topic is still marked active at this point (cleared after this call)
-            if (t.active and t.topic_id == topic_id) {
-                if (self.topic_keys[i]) |k| allocator.free(k);
-                self.topic_keys[i] = null;
-                break;
-            }
-        }
-    }
-
-    pub fn onRefreshValue(self: *AsyncHandler, ctx: *rtd.RtdContext, topic_id: i32) rtd.RtdValue {
+    pub fn onRefreshValue(self: *AsyncHandler, _: *rtd.RtdContext, topic_id: i32) rtd.RtdValue {
         const cache = async_cache.getGlobalCache();
 
-        // Find the topic key for this topic_id
-        for (ctx.topics, 0..) |t, i| {
-            if (t.active and t.topic_id == topic_id) {
-                if (self.topic_keys[i]) |key| {
-                    if (cache.get(key)) |entry| {
-                        // Return current value whether completed or intermediate
-                        return xlopToRtdValue(entry.xloper);
-                    }
-                }
-                break;
+        if (self.topic_keys.get(topic_id)) |key| {
+            if (cache.get(key)) |entry| {
+                return xlopToRtdValue(entry.xloper);
             }
         }
         // No cached value yet — return #N/A as loading indicator
@@ -76,12 +63,11 @@ pub const AsyncHandler = struct {
     }
 
     pub fn onTerminate(self: *AsyncHandler, _: *rtd.RtdContext) void {
-        for (&self.topic_keys) |*k| {
-            if (k.*) |key| {
-                allocator.free(key);
-                k.* = null;
-            }
+        var it = self.topic_keys.iterator();
+        while (it.next()) |entry| {
+            allocator.free(@constCast(entry.value_ptr.*));
         }
+        self.topic_keys.deinit();
     }
 };
 

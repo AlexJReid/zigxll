@@ -58,6 +58,17 @@ pub const AsyncCache = struct {
         };
     }
 
+    /// Remove all cached results, forcing async functions to re-execute.
+    pub fn clear(self: *AsyncCache) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        var it = self.map.iterator();
+        while (it.next()) |entry| {
+            allocator.free(@constCast(entry.key_ptr.*));
+        }
+        self.map.clearAndFree();
+    }
+
     /// Check whether a key exists (used to avoid double-spawning).
     pub fn contains(self: *AsyncCache, key: []const u8) bool {
         self.mutex.lock();

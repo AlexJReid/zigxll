@@ -275,6 +275,25 @@ Each `yield` updates the cell immediately. When the function returns, the final 
 
 Results are cached by function name and arguments. Two calls to `=SlowCalc(42)` in different cells share the same cached result — the computation runs only once. The cache persists for the lifetime of the XLL (until Excel closes or the add-in is unloaded).
 
+To let users force a recalculation, expose a macro that clears the cache:
+
+```zig
+const xll = @import("xll");
+const ExcelMacro = xll.ExcelMacro;
+
+pub const clear_cache = ExcelMacro(.{
+    .name = "ClearAsyncCache",
+    .description = "Clear cached async results, forcing recalculation",
+    .func = struct {
+        fn f() void {
+            xll.async_cache.getGlobalCache().clear();
+        }
+    }.f,
+});
+```
+
+After running this macro (Alt+F8 → `ClearAsyncCache`), the next recalc will re-execute all async functions.
+
 ### Thread pool
 
 Async functions run on a shared thread pool (4 workers). If all workers are busy, new tasks queue until a worker is free. The pool is created lazily on the first async call.
@@ -321,6 +340,26 @@ fn helloImpl() !void {
 | `category` | no | `"General"` | Groups the macro in Excel's UI. |
 
 Macros are discovered alongside functions from the same `function_modules` tuple — no separate wiring needed.
+
+### Inline functions
+
+For simple macros (or functions), you can skip the separate `fn` declaration and inline it directly using an anonymous struct:
+
+```zig
+pub const hello = ExcelMacro(.{
+    .name = "Hello",
+    .description = "Show a greeting",
+    .func = struct {
+        fn f() !void {
+            var msg = try XLValue.fromUtf8String(allocator, "Hello!");
+            defer msg.deinit();
+            _ = xl.Excel12f(xl.xlcAlert, null, 1, &msg.m_val);
+        }
+    }.f,
+});
+```
+
+This works for `ExcelFunction` too — useful when the implementation is short and doesn't need to be referenced elsewhere.
 
 ### Running macros
 

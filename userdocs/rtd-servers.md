@@ -14,25 +14,31 @@ Define a handler struct and wire it up with `RtdServer`:
 const rtd = @import("rtd.zig");
 
 const MyHandler = struct {
-    pub fn onStart(ctx: *rtd.RtdContext) void {
+    pub fn onStart(_: *MyHandler, ctx: *rtd.RtdContext) void {
         // Called when Excel starts the RTD server.
         // Spawn threads, open connections, etc.
     }
 
-    pub fn onConnect(ctx: *rtd.RtdContext, topic_id: i32, topic_count: usize) void {
-        // A cell subscribed to a topic.
+    pub fn onConnect(_: *MyHandler, ctx: *rtd.RtdContext, topic_id: i32, topic_count: usize) void {
+        // A cell subscribed to a topic. Fires immediately.
+        // Topic strings available via ctx.topics.get(topic_id).?.strings
     }
 
-    pub fn onDisconnect(ctx: *rtd.RtdContext, topic_id: i32, topic_count: usize) void {
+    pub fn onConnectBatch(_: *MyHandler, ctx: *rtd.RtdContext, topic_ids: []const i32) void {
+        // Optional: called once per RefreshData with all new topic_ids.
+        // Ideal for bulk broker subscriptions.
+    }
+
+    pub fn onDisconnect(_: *MyHandler, ctx: *rtd.RtdContext, topic_id: i32, topic_count: usize) void {
         // A cell unsubscribed from a topic.
     }
 
-    pub fn onRefreshValue(ctx: *rtd.RtdContext, topic_id: i32) rtd.RtdValue {
+    pub fn onRefreshValue(_: *MyHandler, ctx: *rtd.RtdContext, topic_id: i32) rtd.RtdValue {
         // Return the current value for a topic.
         return .{ .double = 3.14 };
     }
 
-    pub fn onTerminate(ctx: *rtd.RtdContext) void {
+    pub fn onTerminate(_: *MyHandler, ctx: *rtd.RtdContext) void {
         // Called when Excel shuts down the RTD server.
         // Clean up threads, connections, etc.
     }
@@ -54,21 +60,56 @@ In Excel, use `=RTD("myapp.rtd", , "some_topic")` to subscribe.
 | Callback | When it's called |
 |---|---|
 | `onStart` | Excel starts the RTD session (ServerStart). Set up your data source here. |
-| `onConnect` | A cell subscribes to a topic. `topic_count` is the new total. |
+| `onConnect` | A cell subscribes to a topic. Fires immediately per-topic. `topic_count` is the new total. |
+| `onConnectBatch` | *(optional)* Called once in RefreshData with all topic_ids that connected since the last refresh. Ideal for bulk subscription to external brokers. |
 | `onDisconnect` | A cell unsubscribes. `topic_count` is the new total. |
 | `onRefreshValue` | Excel wants the current value for a topic. Return an `RtdValue`. |
 | `onTerminate` | Excel is shutting down the RTD session. Tear down resources. |
+
+Both `onConnect` and `onConnectBatch` fire — they are not mutually exclusive. Use `onConnect` for per-topic bookkeeping (e.g. mapping topic_id to a key) and `onConnectBatch` for bulk external operations (e.g. subscribing to a batch of NATS subjects in one call).
 
 ## RtdContext
 
 Your handler receives an `RtdContext` pointer with:
 
 - **`update_event`** — Excel's callback interface. Usually you don't touch this directly.
-- **`topics`** — Array of `TopicEntry` structs tracking active subscriptions (up to `MAX_TOPICS`).
+- **`topics`** — `AutoHashMap(i32, TopicEntry)` of topic_id → entry. Each `TopicEntry` has a `dirty` flag and a `strings` field (see below).
+- **`pending_connects`** — List of topic_ids that connected since the last RefreshData. Managed by the framework — you read it in `onConnectBatch`.
 - **`topic_count`** — Number of currently active topics.
 - **`user_data`** — An `?*anyopaque` pointer for your own state. Cast your allocated state into this in `onStart` and retrieve it in other callbacks.
 - **`notifyExcel()`** — Call this to tell Excel that new data is available. Excel will then call `onRefreshValue` for dirty topics.
 - **`markAllDirty()`** — Marks all active topics as dirty, so the next `RefreshData` cycle includes them all.
+
+## Topic strings
+
+When Excel calls `ConnectData`, it passes an array of topic strings (the arguments after the ProgID in `=RTD("prog.id", , "topic1", "topic2")`). These are extracted, converted to UTF-8, and stored in the `TopicEntry`:
+
+```zig
+pub fn onConnect(self: *MyHandler, ctx: *rtd.RtdContext, topic_id: i32, _: usize) void {
+    if (ctx.topics.get(topic_id)) |entry| {
+        // entry.strings is []const []const u8
+        // e.g. for =RTD("myprog.rtd", , "NYSE", "AAPL") → .{ "NYSE", "AAPL" }
+        for (entry.strings) |s| {
+            std.log.info("topic string: {s}", .{s});
+        }
+    }
+}
+```
+
+The strings are also available in `onConnectBatch` — look up each topic_id in `ctx.topics`:
+
+```zig
+pub fn onConnectBatch(self: *MyHandler, ctx: *rtd.RtdContext, topic_ids: []const i32) void {
+    // Collect all subjects and subscribe in one broker call
+    for (topic_ids) |tid| {
+        if (ctx.topics.get(tid)) |entry| {
+            const subject = entry.strings[0]; // e.g. "prices.AAPL"
+            // ...
+        }
+    }
+    broker.subscribeBatch(subjects);
+}
+```
 
 ## Auto-registration
 
@@ -162,6 +203,6 @@ return rtd_call.subscribe("myprog.rtd", &.{ exchange, symbol });
 
 ## Limitations
 
-- Maximum 16,384 topics per RTD server instance (`MAX_TOPICS`).
+- No hard limit on topic count (uses dynamically-sized HashMap).
 - Values support `i32`, `f64`, `bool`, UTF-16 strings, and empty (via `RtdValue` tagged union).
 - Single RTD server class per XLL (one CLSID/ProgID pair).
