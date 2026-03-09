@@ -27,6 +27,7 @@ What Zig gives us:
 - UTF-8 strings (framework handles UTF-16 conversion)
 - Zig errors become `#VALUE!` in Excel. For specific errors (`#N/A`, `#DIV/0!`, etc.), return `XLValue.na()`, `XLValue.errDiv0()`, etc.
 - Thread-safe by default (MTR)
+- Zero function call overhead — [2000 Black-Scholes calculations recalc in under 7ms](./example#example-functions) on a basic PC
 - Cross-compilation from Mac/Linux via [xwin](https://jake-shadle.github.io/xwin/)
 - Async functions - add `.async = true` to run on a thread pool with automatic caching. See [function docs](./userdocs/functions.md#async-functions)
 - Pure Zig COM RTD servers - no ATL/MFC. See [RTD docs](./userdocs/rtd-servers.md)
