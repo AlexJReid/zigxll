@@ -1,6 +1,6 @@
 .{
     .name = .xll,
-    .version = "0.3.8",
+    .version = "0.3.9",
     .fingerprint = 0x28efe92271313caf, // Changing this has security and trust implications.
     .minimum_zig_version = "0.15.1",
     .paths = .{
