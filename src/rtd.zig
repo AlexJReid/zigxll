@@ -342,23 +342,24 @@ fn extractTopicStrings(psa: *SAFEARRAY) []const []const u8 {
             continue;
         }
         const len = SysStringLen(bstr);
-        const utf16 = bstr.?[0..len];
-        // Convert UTF-16 to UTF-8
-        const utf8_len = std.unicode.calcUtf8Len(utf16) catch 0;
-        if (utf8_len == 0) {
+        if (len == 0) {
             result[i] = alloc.dupe(u8, "") catch "";
             continue;
         }
-        const buf = alloc.alloc(u8, utf8_len) catch {
+        const utf16 = bstr.?[0..len];
+        // Each UTF-16 code unit produces at most 3 UTF-8 bytes
+        const max_utf8_len = len * 3;
+        const buf = alloc.alloc(u8, max_utf8_len) catch {
             result[i] = alloc.dupe(u8, "") catch "";
             continue;
         };
         const written = std.unicode.utf16LeToUtf8(buf, utf16) catch 0;
-        if (written < buf.len) {
-            result[i] = alloc.realloc(buf, written) catch buf[0..written];
-        } else {
-            result[i] = buf;
+        if (written == 0) {
+            alloc.free(buf);
+            result[i] = alloc.dupe(u8, "") catch "";
+            continue;
         }
+        result[i] = alloc.realloc(buf, written) catch buf[0..written];
     }
     return result;
 }
@@ -519,10 +520,10 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
                     const topic_id: LONG = args[2].data.lval;
 
                     // args[1] is the SAFEARRAY of topic strings
-                    const topic_strings = if (args[1].vt == (VT_ARRAY | VT_VARIANT) or args[1].vt == (VT_ARRAY | VT_BSTR))
-                        extractTopicStrings(@ptrCast(@alignCast(args[1].data.ptr orelse &.{})))
+                    const topic_strings: []const []const u8 = if ((args[1].vt == (VT_ARRAY | VT_VARIANT) or args[1].vt == (VT_ARRAY | VT_BSTR)) and args[1].data.ptr != null)
+                        extractTopicStrings(@ptrCast(@alignCast(args[1].data.ptr.?)))
                     else
-                        @as([]const []const u8, &.{});
+                        &.{};
 
                     const s = getObj(self_opaque).getState();
                     s.ctx.topics.put(topic_id, .{ .dirty = true, .strings = topic_strings }) catch {
