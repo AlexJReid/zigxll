@@ -1,8 +1,14 @@
-# ZigXLL
+# zigxll
 
-A Zig framework for building Excel XLL add-ins. Cross-compiles from Mac/Linux to Windows without needing a Windows install.
+A Zig framework for building Excel XLL add-ins including live data support.
 
 [Standalone template repo](https://github.com/AlexJReid/zigxll-standalone/) | [Example project](./example)
+
+## Documentation
+
+- [Creating functions](./userdocs/functions.md) - types, options, returning strings/arrays, namespacing
+- [RTD servers](./userdocs/rtd-servers.md) - pushing live data to Excel, using RTD from UDFs
+- [How it works](./userdocs/how-it-works.md) - comptime code generation, architecture
 
 ## Why XLLs
 
@@ -14,12 +20,11 @@ The catch: the C SDK dates from the early 1990s. Memory management is manual, th
 
 Zig's C interop and comptime make the SDK usable. You write normal Zig functions with standard types. The framework generates all the Excel boilerplate at compile time: exports, type conversions, registration, COM vtables for RTD.
 
-What you get:
+What Zig gives us:
 
 - No boilerplate - define functions with `ExcelFunction()`, framework handles the rest
 - Type-safe conversions between Zig types and XLOPER12
 - UTF-8 strings (framework handles UTF-16 conversion)
-- Zig errors become `#VALUE!` in Excel
 - Thread-safe by default (MTR)
 - Cross-compilation from Mac/Linux via [xwin](https://jake-shadle.github.io/xwin/)
 - Async functions - add `.async = true` to run on a thread pool with automatic caching. See [function docs](./userdocs/functions.md#async-functions)
@@ -34,7 +39,7 @@ Add ZigXLL as a dependency in your `build.zig.zon`:
 ```zig
 .dependencies = .{
     .xll = .{
-        .url = "https://github.com/alexjreid/zigxll/archive/refs/tags/v0.2.5.tar.gz",
+        .url = "https://github.com/alexjreid/zigxll/archive/refs/tags/v0.3.1.tar.gz",
         .hash = "...",
     },
 },
@@ -111,12 +116,6 @@ zig build
 ```
 
 Output lands in `zig-out/lib/my_functions.xll`. Double-click to load in Excel.
-
-## Documentation
-
-- [Creating functions](./userdocs/functions.md) - types, options, returning strings/arrays, namespacing
-- [RTD servers](./userdocs/rtd-servers.md) - pushing live data to Excel, using RTD from UDFs
-- [How it works](./userdocs/how-it-works.md) - comptime code generation, architecture
 
 ## Cross-compilation
 
