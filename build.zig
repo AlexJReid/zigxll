@@ -4,11 +4,10 @@ const builtin = @import("builtin");
 // Framework build
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{
-        .default_target = .{
-            .cpu_arch = .x86_64,
-            .os_tag = .windows,
-            .abi = .msvc,
-        },
+        .default_target = if (builtin.os.tag == .windows)
+            .{ .cpu_arch = .x86_64, .os_tag = .windows }
+        else
+            .{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .msvc },
     });
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSmall });
 
@@ -140,11 +139,14 @@ pub fn buildXll(
     xll.addLibraryPath(excel_lib);
     xll.root_module.addIncludePath(excel_include);
 
+    // Add Windows SDK/CRT paths to both the XLL compile step and the user module,
+    // so that any C code the user compiles (e.g. nats.c) can find vcrt/ucrt headers and libs.
     if (builtin.os.tag == .windows) {
         addNativeMsvcPaths(b, xll);
     } else {
         addXwinPaths(b, xll);
     }
+    applyXwinToModule(b, options.user_module);
 
     xll.linkLibC();
     xll.linkSystemLibrary("user32");
@@ -159,13 +161,21 @@ pub fn buildXll(
     return xll;
 }
 
+fn requireEnv(b: *std.Build, name: []const u8) []const u8 {
+    return std.process.getEnvVarOwned(b.allocator, name) catch {
+        std.log.err("Missing environment variable '{s}'. Run from a Visual Studio Developer Command Prompt (vcvarsall.bat).", .{name});
+        @panic("MSVC environment not configured");
+    };
+}
+
 /// On native Windows, use VCToolsInstallDir / WindowsSdkDir env vars to locate the MSVC CRT.
+/// These are set by the Visual Studio Developer Command Prompt (vcvarsall.bat).
 fn addNativeMsvcPaths(b: *std.Build, compile: *std.Build.Step.Compile) void {
-    const vctools = std.process.getEnvVarOwned(b.allocator, "VCToolsInstallDir") catch return;
-    const ucrt_sdk = std.process.getEnvVarOwned(b.allocator, "UniversalCRTSdkDir") catch return;
-    const ucrt_ver = std.process.getEnvVarOwned(b.allocator, "UCRTVersion") catch return;
-    const win_sdk = std.process.getEnvVarOwned(b.allocator, "WindowsSdkDir") catch return;
-    const win_sdk_ver = std.process.getEnvVarOwned(b.allocator, "WindowsSDKVersion") catch return;
+    const vctools = requireEnv(b, "VCToolsInstallDir");
+    const ucrt_sdk = requireEnv(b, "UniversalCRTSdkDir");
+    const ucrt_ver = requireEnv(b, "UCRTVersion");
+    const win_sdk = requireEnv(b, "WindowsSdkDir");
+    const win_sdk_ver = requireEnv(b, "WindowsSDKVersion");
 
     const msvc_lib_dir = b.fmt("{s}lib\\x64", .{vctools});
     const ucrt_lib_dir = b.fmt("{s}Lib\\{s}\\ucrt\\x64", .{ ucrt_sdk, ucrt_ver });
@@ -195,6 +205,23 @@ fn addNativeMsvcPaths(b: *std.Build, compile: *std.Build.Step.Compile) void {
 
     const libc_file = b.addWriteFiles().add("libc.conf", libc_conf);
     compile.setLibCFile(libc_file);
+}
+
+/// When cross-compiling from Mac/Linux, add xwin system include paths to a module
+/// so C code compiled within it can find headers like <vcruntime.h>, <corecrt.h>, <windows.h>.
+/// On native Windows, Zig finds these automatically.
+fn applyXwinToModule(b: *std.Build, mod: *std.Build.Module) void {
+    if (builtin.os.tag == .windows) return;
+
+    const home = std.process.getEnvVarOwned(b.allocator, "HOME") catch return;
+    const xwin_dir = std.fs.path.join(b.allocator, &.{ home, ".xwin" }) catch return;
+    var dir = std.fs.openDirAbsolute(xwin_dir, .{}) catch return;
+    dir.close();
+
+    mod.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/crt/include", .{xwin_dir}) });
+    mod.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/sdk/include/ucrt", .{xwin_dir}) });
+    mod.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/sdk/include/um", .{xwin_dir}) });
+    mod.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/sdk/include/shared", .{xwin_dir}) });
 }
 
 /// If ~/.xwin exists (installed via `brew install xwin && xwin --accept-license splat --output ~/.xwin`),
