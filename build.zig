@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 // Framework build
 pub fn build(b: *std.Build) void {
@@ -43,7 +44,10 @@ pub fn build(b: *std.Build) void {
     xll.addIncludePath(b.path("excel/include"));
     xll.addLibraryPath(b.path("excel/lib"));
 
-    addXwinPaths(b, xll);
+    // xwin is only needed when cross-compiling from Mac/Linux
+    if (builtin.os.tag != .windows) {
+        addXwinPaths(b, xll);
+    }
 
     xll.linkLibC();
     xll.linkSystemLibrary("user32");
@@ -135,7 +139,10 @@ pub fn buildXll(
     xll.addLibraryPath(excel_lib);
     xll.root_module.addIncludePath(excel_include);
 
-    addXwinPaths(b, xll);
+    // xwin is only needed when cross-compiling from Mac/Linux
+    if (builtin.os.tag != .windows) {
+        addXwinPaths(b, xll);
+    }
 
     xll.linkLibC();
     xll.linkSystemLibrary("user32");
