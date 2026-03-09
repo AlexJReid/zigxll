@@ -44,8 +44,9 @@ pub fn build(b: *std.Build) void {
     xll.addIncludePath(b.path("excel/include"));
     xll.addLibraryPath(b.path("excel/lib"));
 
-    // xwin is only needed when cross-compiling from Mac/Linux
-    if (builtin.os.tag != .windows) {
+    if (builtin.os.tag == .windows) {
+        addNativeMsvcPaths(b, xll);
+    } else {
         addXwinPaths(b, xll);
     }
 
@@ -139,8 +140,9 @@ pub fn buildXll(
     xll.addLibraryPath(excel_lib);
     xll.root_module.addIncludePath(excel_include);
 
-    // xwin is only needed when cross-compiling from Mac/Linux
-    if (builtin.os.tag != .windows) {
+    if (builtin.os.tag == .windows) {
+        addNativeMsvcPaths(b, xll);
+    } else {
         addXwinPaths(b, xll);
     }
 
@@ -155,6 +157,44 @@ pub fn buildXll(
     xll.linkSystemLibrary("ole32");
 
     return xll;
+}
+
+/// On native Windows, use VCToolsInstallDir / WindowsSdkDir env vars to locate the MSVC CRT.
+fn addNativeMsvcPaths(b: *std.Build, compile: *std.Build.Step.Compile) void {
+    const vctools = std.process.getEnvVarOwned(b.allocator, "VCToolsInstallDir") catch return;
+    const ucrt_sdk = std.process.getEnvVarOwned(b.allocator, "UniversalCRTSdkDir") catch return;
+    const ucrt_ver = std.process.getEnvVarOwned(b.allocator, "UCRTVersion") catch return;
+    const win_sdk = std.process.getEnvVarOwned(b.allocator, "WindowsSdkDir") catch return;
+    const win_sdk_ver = std.process.getEnvVarOwned(b.allocator, "WindowsSDKVersion") catch return;
+
+    const msvc_lib_dir = b.fmt("{s}lib\\x64", .{vctools});
+    const ucrt_lib_dir = b.fmt("{s}Lib\\{s}\\ucrt\\x64", .{ ucrt_sdk, ucrt_ver });
+    const ucrt_inc_dir = b.fmt("{s}Include\\{s}\\ucrt", .{ ucrt_sdk, ucrt_ver });
+    const vctools_inc = b.fmt("{s}include", .{vctools});
+    const kernel32_lib_dir = b.fmt("{s}Lib\\{s}\\um\\x64", .{ win_sdk, win_sdk_ver });
+    const um_inc_dir = b.fmt("{s}Include\\{s}\\um", .{ win_sdk, win_sdk_ver });
+    const shared_inc_dir = b.fmt("{s}Include\\{s}\\shared", .{ win_sdk, win_sdk_ver });
+
+    compile.addLibraryPath(.{ .cwd_relative = msvc_lib_dir });
+    compile.addLibraryPath(.{ .cwd_relative = ucrt_lib_dir });
+    compile.addLibraryPath(.{ .cwd_relative = kernel32_lib_dir });
+
+    compile.addSystemIncludePath(.{ .cwd_relative = vctools_inc });
+    compile.addSystemIncludePath(.{ .cwd_relative = ucrt_inc_dir });
+    compile.addSystemIncludePath(.{ .cwd_relative = um_inc_dir });
+    compile.addSystemIncludePath(.{ .cwd_relative = shared_inc_dir });
+
+    const libc_conf = b.fmt(
+        "include_dir={s}\n" ++
+        "sys_include_dir={s}\n" ++
+        "crt_dir={s}\n" ++
+        "msvc_lib_dir={s}\n" ++
+        "kernel32_lib_dir={s}\n" ++
+        "gcc_dir=\n"
+    , .{ ucrt_inc_dir, vctools_inc, ucrt_lib_dir, msvc_lib_dir, kernel32_lib_dir });
+
+    const libc_file = b.addWriteFiles().add("libc.conf", libc_conf);
+    compile.setLibCFile(libc_file);
 }
 
 /// If ~/.xwin exists (installed via `brew install xwin && xwin --accept-license splat --output ~/.xwin`),
