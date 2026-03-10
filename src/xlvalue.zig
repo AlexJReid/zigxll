@@ -180,13 +180,27 @@ pub const XLValue = struct {
         };
     }
 
-    pub fn na() *xl.XLOPER12 { return staticErr(xl.xlerrNA); }
-    pub fn errValue() *xl.XLOPER12 { return staticErr(xl.xlerrValue); }
-    pub fn errDiv0() *xl.XLOPER12 { return staticErr(xl.xlerrDiv0); }
-    pub fn errRef() *xl.XLOPER12 { return staticErr(xl.xlerrRef); }
-    pub fn errName() *xl.XLOPER12 { return staticErr(xl.xlerrName); }
-    pub fn errNum() *xl.XLOPER12 { return staticErr(xl.xlerrNum); }
-    pub fn errNull() *xl.XLOPER12 { return staticErr(xl.xlerrNull); }
+    pub fn na() *xl.XLOPER12 {
+        return staticErr(xl.xlerrNA);
+    }
+    pub fn errValue() *xl.XLOPER12 {
+        return staticErr(xl.xlerrValue);
+    }
+    pub fn errDiv0() *xl.XLOPER12 {
+        return staticErr(xl.xlerrDiv0);
+    }
+    pub fn errRef() *xl.XLOPER12 {
+        return staticErr(xl.xlerrRef);
+    }
+    pub fn errName() *xl.XLOPER12 {
+        return staticErr(xl.xlerrName);
+    }
+    pub fn errNum() *xl.XLOPER12 {
+        return staticErr(xl.xlerrNum);
+    }
+    pub fn errNull() *xl.XLOPER12 {
+        return staticErr(xl.xlerrNull);
+    }
 
     // Type checking
     pub fn type_val(self: *const XLValue) xl.int {

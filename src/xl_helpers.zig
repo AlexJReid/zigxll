@@ -3,7 +3,6 @@ const builtin = @import("builtin");
 const xl_imports = @import("xl_imports.zig");
 const xl = xl_imports.xl;
 
-
 // Platform-specific debug output
 const outputDebug = if (builtin.os.tag == .windows)
     struct {
