@@ -31,7 +31,7 @@ jobs:
     - name: Install Trusted Signing Client
       shell: pwsh
       run: |
-        nuget install Microsoft.Trusted.Signing.Client -OutputDirectory .\packages
+        nuget install Microsoft.ArtifactSigning.Client -OutputDirectory .\packages
 
     - name: Setup Zig
       uses: mlugg/setup-zig@v2
