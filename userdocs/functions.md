@@ -363,7 +363,7 @@ This works for `ExcelFunction` too — useful when the implementation is short a
 
 ### Running macros
 
-Macros appear in Excel's macro dialog (Alt+F8). They can also be assigned to buttons, shapes, or keyboard shortcuts within Excel.
+Macros do **not** appear in Excel's macro dialog. They can be run via VBA `Application.Run "MacroName"`
 
 ## Limits
 
