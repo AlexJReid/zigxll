@@ -11,6 +11,7 @@
 //   fn onStart(ctx: *RtdContext) void
 //   fn onConnect(ctx: *RtdContext, topic_id: i32, topic_count: usize) void
 //   fn onConnectBatch(ctx: *RtdContext, topic_ids: []const i32) void   // optional — called in RefreshData with all new connects since last refresh
+//   fn onBeforeRefresh(ctx: *RtdContext, dirty_count: usize) void    // optional — called before onRefreshValue loop, good for arena resets
 //   fn onDisconnect(ctx: *RtdContext, topic_id: i32, topic_count: usize) void
 //   fn onRefreshValue(ctx: *RtdContext, topic_id: i32) RtdValue
 //   fn onTerminate(ctx: *RtdContext) void
@@ -635,6 +636,10 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
             if (dirty_count == 0) {
                 parray_out.* = null;
                 return S_OK;
+            }
+
+            if (@hasDecl(Handler, "onBeforeRefresh")) {
+                s.handler.onBeforeRefresh(&s.ctx, dirty_count);
             }
 
             var bounds = [2]SAFEARRAYBOUND{
