@@ -23,6 +23,16 @@ jobs:
       with:
         arch: x64
 
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Install Trusted Signing Client
+      shell: pwsh
+      run: |
+        nuget install Microsoft.Trusted.Signing.Client -OutputDirectory .\packages
+
     - name: Setup Zig
       uses: mlugg/setup-zig@v2
       with:
@@ -44,6 +54,23 @@ jobs:
     - name: Build example XLL
       working-directory: example
       run: zig build --release=fast
+
+    - name: Sign example XLL
+      shell: pwsh
+      run: |
+        $dlib = Get-ChildItem -Path ".\packages" -Recurse -Filter "Azure.CodeSigning.Dlib.dll" |
+          Where-Object { $_.FullName -like "*x64*" } |
+          Select-Object -First 1 -ExpandProperty FullName
+
+        $signtool = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" |
+          Sort-Object { [version]($_.Directory.Parent.Name) } -Descending |
+          Select-Object -First 1 -ExpandProperty FullName
+
+        & $signtool sign /v /fd SHA256 `
+          /tr "http://timestamp.acs.microsoft.com" /td SHA256 `
+          /dlib "$dlib" `
+          /dmdf ".\signing-metadata.json" `
+          "example\zig-out\lib\my_excel_functions.xll"
 
     - name: Upload example XLL artifact
       uses: actions/upload-artifact@v4
