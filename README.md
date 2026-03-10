@@ -154,9 +154,15 @@ Uses the **Microsoft Excel 2013 XLL SDK** headers and libraries, included in `ex
 
 By using this software you agree to the EULA specified by Microsoft in the above download.
 
-## Commercial and Support
+## Projects using ZigXLL
 
-I can build an Excel add-in for you. Drop me an [email](mailto:alex@lexvica.com).
+- [zigxll-nats](https://github.com/AlexJReid/zigxll-nats) — Stream NATS messages into Excel as live data
+
+## Commercial
+
+ZigXLL is the MIT-licensed core behind [xllify.com](https://xllify.com), a platform for building custom Excel function add-ins for Windows, Mac, and the web.
+
+I can also build an Excel add-in for you. Drop me an [email](mailto:alex@lexvica.com).
 
 ## License
 
