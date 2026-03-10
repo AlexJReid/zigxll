@@ -22,3 +22,10 @@ pub const ExcelMacro = excel_macro.ExcelMacro;
 pub const ParamMeta = excel_function.ParamMeta;
 pub const AsyncContext = async_infra.AsyncContext;
 pub const AsyncValue = async_infra.AsyncValue;
+
+// Lua scripting support
+pub const lua = @import("lua.zig");
+pub const lua_function = @import("lua_function.zig");
+pub const LuaFunction = lua_function.LuaFunction;
+pub const LuaParam = lua_function.LuaParam;
+pub const LuaParamType = lua_function.LuaParamType;

@@ -20,6 +20,7 @@ pub fn build(b: *std.Build) void {
         .user_module = user_module,
         .target = target,
         .optimize = optimize,
+        .enable_lua = true,
     });
     // Install the XLL (rename .dll to .xll)
     const install_xll = b.addInstallFile(xll.getEmittedBin(), "lib/my_excel_functions.xll");

@@ -91,8 +91,24 @@ pub fn xlAutoOpen() callconv(.c) c_int {
         xl_helpers.debugLogFmt("Successfully registered {d} macros", .{all_macros.len});
     }
 
-    // Auto-register RTD servers if user module declares them
+    // Initialize Lua and load scripts if user module declares them
     const user_mod = @import("root").user_functions;
+    if (comptime @hasDecl(user_mod, "lua_scripts")) {
+        const lua = @import("lua.zig");
+        lua.init() catch {
+            xl_helpers.debugLog("Failed to initialize Lua");
+            return xl.xlretFailed;
+        };
+        inline for (user_mod.lua_scripts) |script| {
+            lua.loadScript(script.source, script.name) catch {
+                xl_helpers.debugLogFmt("Failed to load Lua script: {s}", .{script.name});
+                return xl.xlretFailed;
+            };
+        }
+        xl_helpers.debugLogFmt("Loaded {d} Lua scripts", .{user_mod.lua_scripts.len});
+    }
+
+    // Auto-register RTD servers if user module declares them
     if (comptime @hasDecl(user_mod, "rtd_servers")) {
         if (rtd_registry.getXllPathSlice(&xDLL)) |xll_path| {
             inline for (user_mod.rtd_servers) |server_module| {
@@ -227,6 +243,14 @@ fn registerMacro(comptime MacroType: type, xll_path: *xl.XLOPER12, allocator: st
 
 pub fn xlAutoClose() callconv(.c) c_int {
     xl_helpers.debugLog("xlAutoClose called");
+
+    // Clean up Lua state if it was initialized
+    const user_mod = @import("root").user_functions;
+    if (comptime @hasDecl(user_mod, "lua_scripts")) {
+        const lua = @import("lua.zig");
+        lua.deinit();
+    }
+
     initialized = false;
     return xl.xlretSuccess;
 }

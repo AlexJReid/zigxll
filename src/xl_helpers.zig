@@ -31,6 +31,15 @@ pub fn debugLogFmt(comptime fmt: []const u8, args: anytype) void {
     outputDebug(msg.ptr);
 }
 
+/// Debug log with a runtime string (for Lua errors, etc.)
+pub fn debugLogRuntime(msg: []const u8) void {
+    var buf: [512]u8 = undefined;
+    const len = @min(msg.len, buf.len - 1);
+    @memcpy(buf[0..len], msg[0..len]);
+    buf[len] = 0;
+    outputDebug(@ptrCast(&buf));
+}
+
 pub inline fn xlFree(oper: *xl.XLOPER12) void {
     _ = xl.Excel12f(xl.xlFree, null, 1, oper);
 }

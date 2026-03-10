@@ -7,6 +7,7 @@ pub fn build(b: *std.Build) void {
         .default_target = .{ .cpu_arch = .x86_64, .os_tag = .windows, .abi = .msvc },
     });
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSmall });
+    const enable_lua = b.option(bool, "lua", "Enable Lua scripting support") orelse false;
 
     // Add include path for ZLS to find C headers during @cImport analysis
     b.addSearchPrefix("excel");
@@ -40,6 +41,15 @@ pub fn build(b: *std.Build) void {
     xll.addIncludePath(b.path("excel/include"));
     xll.addLibraryPath(b.path("excel/lib"));
 
+    if (enable_lua) {
+        addLuaPaths(b, xll);
+    }
+
+    // MSVC CRT stubs — safe in XLL context (Excel already initialized the CRT)
+    if (target.result.os.tag == .windows) {
+        xll.addCSourceFiles(.{ .root = b.path("src"), .files = &.{"msvc_stubs.c"} });
+    }
+
     if (builtin.os.tag == .windows) {
         addNativeMsvcPaths(b, xll);
     } else {
@@ -58,6 +68,8 @@ pub fn build(b: *std.Build) void {
 
     // Add test step - uses native target so tests can run on Mac/Linux
     const native_target = b.resolveTargetQuery(.{});
+    const test_options = b.addOptions();
+    test_options.addOption(bool, "enable_lua", enable_lua);
     const tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/tests.zig"),
@@ -65,7 +77,11 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    tests.root_module.addImport("test_options", test_options.createModule());
     tests.addIncludePath(b.path("excel/include"));
+    if (enable_lua) {
+        addLuaPaths(b, tests);
+    }
     tests.linkLibC();
 
     // Only link Excel libraries on Windows
@@ -91,6 +107,7 @@ pub fn buildXll(
         user_module: *std.Build.Module,
         target: std.Build.ResolvedTarget,
         optimize: std.builtin.OptimizeMode,
+        enable_lua: bool = false,
     },
 ) *std.Build.Step.Compile {
     const target = options.target;
@@ -138,6 +155,15 @@ pub fn buildXll(
     xll.addLibraryPath(excel_lib);
     xll.root_module.addIncludePath(excel_include);
 
+    if (options.enable_lua) {
+        addLuaFromDep(xll_dep, xll);
+    }
+
+    // MSVC CRT stubs — safe in XLL context (Excel already initialized the CRT)
+    if (target.result.os.tag == .windows) {
+        xll.addCSourceFiles(.{ .root = xll_dep.path("src"), .files = &.{"msvc_stubs.c"} });
+    }
+
     // Add Windows SDK/CRT paths to both the XLL compile step and the user module,
     // so that any C code the user compiles (e.g. nats.c) can find vcrt/ucrt headers and libs.
     if (builtin.os.tag == .windows) {
@@ -161,6 +187,34 @@ pub fn buildXll(
 
     return xll;
 }
+
+/// Compile Lua 5.4 from source (from xll dependency)
+fn addLuaFromDep(xll_dep: *std.Build.Dependency, compile: *std.Build.Step.Compile) void {
+    const lua_src = xll_dep.path("deps/lua/src");
+    compile.addIncludePath(lua_src);
+    compile.root_module.addIncludePath(lua_src);
+    const xll_framework = xll_dep.module("xll");
+    xll_framework.addIncludePath(lua_src);
+
+    compile.addCSourceFiles(.{ .root = lua_src, .files = &lua_sources });
+}
+
+/// Compile Lua 5.4 from source (for framework's own build)
+fn addLuaPaths(b: *std.Build, compile: *std.Build.Step.Compile) void {
+    compile.addIncludePath(b.path("deps/lua/src"));
+    compile.addCSourceFiles(.{ .root = b.path("deps/lua/src"), .files = &lua_sources });
+}
+
+const lua_sources = .{
+    "lapi.c",     "lauxlib.c",  "lbaselib.c", "lcode.c",
+    "lcorolib.c", "lctype.c",   "ldblib.c",   "ldebug.c",
+    "ldo.c",      "ldump.c",    "lfunc.c",    "lgc.c",
+    "linit.c",    "liolib.c",   "llex.c",     "lmathlib.c",
+    "lmem.c",     "loadlib.c",  "lobject.c",  "lopcodes.c",
+    "loslib.c",   "lparser.c",  "lstate.c",   "lstring.c",
+    "lstrlib.c",  "ltable.c",   "ltablib.c",  "ltm.c",
+    "lundump.c",  "lutf8lib.c", "lvm.c",      "lzio.c",
+};
 
 fn requireEnv(b: *std.Build, name: []const u8) []const u8 {
     return std.process.getEnvVarOwned(b.allocator, name) catch {
