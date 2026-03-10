@@ -50,6 +50,8 @@ pub fn build(b: *std.Build) void {
     xll.linkSystemLibrary("user32");
     xll.linkSystemLibrary("xlcall32");
     xll.linkSystemLibrary("frmwrk32");
+    xll.linkSystemLibrary("vcruntime");
+    xll.linkSystemLibrary("ucrt");
 
     const install_xll = b.addInstallFile(xll.getEmittedBin(), "lib/output.xll");
     b.getInstallStep().dependOn(&install_xll.step);
@@ -142,8 +144,8 @@ pub fn buildXll(
         addNativeMsvcPaths(b, xll);
     } else {
         addXwinPaths(b, xll);
+        applyXwinToModule(b, options.user_module);
     }
-    applyXwinToModule(b, options.user_module);
 
     xll.linkLibC();
     xll.linkSystemLibrary("user32");
@@ -154,6 +156,8 @@ pub fn buildXll(
     xll.linkSystemLibrary("oleaut32");
     xll.linkSystemLibrary("advapi32");
     xll.linkSystemLibrary("ole32");
+    xll.linkSystemLibrary("vcruntime");
+    xll.linkSystemLibrary("ucrt");
 
     return xll;
 }
@@ -190,7 +194,6 @@ fn addNativeMsvcPaths(b: *std.Build, compile: *std.Build.Step.Compile) void {
     compile.addSystemIncludePath(.{ .cwd_relative = ucrt_inc_dir });
     compile.addSystemIncludePath(.{ .cwd_relative = um_inc_dir });
     compile.addSystemIncludePath(.{ .cwd_relative = shared_inc_dir });
-
 }
 
 /// When cross-compiling from Mac/Linux, add xwin system include paths to a module
