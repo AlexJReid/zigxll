@@ -2,6 +2,10 @@
 
 Example project showing how to use ZigXLL to create custom Excel functions.
 
+## Download
+
+**Download the latest release [here](https://github.com/AlexJReid/zigxll/releases/latest).** This binary is code signed by [Lexvica Limited](https://lexvica.com).
+
 ## Quick Start
 
 ```bash
@@ -22,6 +26,8 @@ If you download an artifact from this repo you will need to unzip the file and u
 - `ZigXLL.SLOW_DOUBLE(x)` - Double a number asynchronously (simulates slow computation)
 - `ZigXLL.MONTE_CARLO(batches, samples_per_batch)` - Estimate pi via Monte Carlo with live progress updates
 
-BS_CALL and BS_PUT are exercised in the .xlsm sheet in this directory, showing performance with 1000 input rows. As both call and put are calculated this is 2000 calculations. Add some more if you want! On a *very* basic test PC (AMD Ryzen 5500U) I see this complete in  ~4-6ms.
+## Performance
+
+`ZigXLL.BS_CALL` and `ZigXLL.BS_PUT` are exercised in the .xlsm sheet in this directory, showing performance with 1000 input rows. As both call and put are calculated this is 2000 calculations. Add some more if you want! On a *very* basic test PC (AMD Ryzen 5500U) I see this complete in  ~4-6ms.
 
 ![2000 Black-Scholes recalculations in ~6.8ms](../userdocs/bs2000.png)
