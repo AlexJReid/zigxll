@@ -99,6 +99,7 @@ pub fn xlAutoOpen() callconv(.c) c_int {
             xl_helpers.debugLog("Failed to initialize Lua");
             return xl.xlretFailed;
         };
+        xl_helpers.debugLogFmt("Lua: initialized {d} state(s)", .{lua.getPoolSize()});
         inline for (user_mod.lua_scripts) |script| {
             lua.loadScript(script.source, script.name) catch {
                 xl_helpers.debugLogFmt("Failed to load Lua script: {s}", .{script.name});

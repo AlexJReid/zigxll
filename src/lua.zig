@@ -252,17 +252,18 @@ fn createState() !*lua_State {
     return L;
 }
 
+pub fn getPoolSize() usize {
+    return pool_size;
+}
+
 /// Initialize the state pool. Creates `pool_size` independent Lua states.
 pub fn init() !void {
     if (pool_initialized) return;
 
-    const xl_helpers = @import("xl_helpers.zig");
-    xl_helpers.debugLogFmt("Lua: initializing {d} state(s)", .{pool_size});
     for (&state_pool) |*slot| {
         slot.L = createState() catch return error.LuaInitFailed;
     }
     pool_initialized = true;
-    xl_helpers.debugLogFmt("Lua: state pool ready ({d} states)", .{pool_size});
 }
 
 /// Load and execute a Lua source string on all pool states.
