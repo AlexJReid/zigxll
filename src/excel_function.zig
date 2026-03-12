@@ -34,7 +34,7 @@ pub fn ExcelFunction(comptime meta: anytype) type {
     const category = if (@hasField(@TypeOf(meta), "category")) meta.category else "General";
     const func = meta.func;
     const params_meta = if (@hasField(@TypeOf(meta), "params")) meta.params else &[_]ParamMeta{};
-    const is_async = if (@hasField(@TypeOf(meta), "async")) meta.async else false;
+    const is_async = if (@hasField(@TypeOf(meta), "is_async")) meta.is_async else if (@hasField(@TypeOf(meta), "async")) meta.@"async" else false;
     // Async functions must NOT be thread-safe (they call xlfRtd which isn't thread-safe)
     const thread_safe = if (is_async) false else (if (@hasField(@TypeOf(meta), "thread_safe")) meta.thread_safe else true);
 

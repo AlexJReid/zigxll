@@ -58,6 +58,7 @@ pub const myFunc = ExcelFunction(.{
 | `description` | no | `""` | Shown in Excel's Insert Function dialog. |
 | `category` | no | `"General"` | Groups the function in Excel's function list. |
 | `thread_safe` | no | `true` | Enables Multi-Threaded Recalculation. Set to `false` if your function has side effects or shared state. |
+| `is_async` | no | `false` | Runs the function on a background thread pool with result caching via RTD. Automatically sets `thread_safe = false`. |
 
 ## Supported types
 
@@ -198,13 +199,13 @@ Excel shows this as `Finance.BSCall`. The exported DLL symbol uses underscores (
 
 ## Async functions
 
-Add `.async = true` to run a function on a background thread pool. The cell shows `#N/A` while computing, then updates with the final result. Once complete, the cell becomes a plain value (no ongoing overhead).
+Add `.is_async = true` to run a function on a background thread pool. The cell shows `#N/A` while computing, then updates with the final result. Once complete, the cell becomes a plain value (no ongoing overhead).
 
 ```zig
 pub const slow_calc = ExcelFunction(.{
     .name = "SlowCalc",
     .description = "Expensive calculation",
-    .async = true,
+    .is_async = true,
     .func = slowCalcImpl,
     .params = &[_]ParamMeta{
         .{ .name = "x", .description = "Input value" },
@@ -237,7 +238,7 @@ const AsyncContext = xll.AsyncContext;
 pub const slow_calc = ExcelFunction(.{
     .name = "SlowCalc",
     .description = "Expensive calculation with progress",
-    .async = true,
+    .is_async = true,
     .func = slowCalcImpl,
     .params = &[_]ParamMeta{
         .{ .name = "x", .description = "Input value" },

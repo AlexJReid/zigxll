@@ -135,7 +135,7 @@ Excel uses UTF-16 wide strings. XLValue handles conversion:
 
 ## Async Functions
 
-Async functions use Excel's RTD (Real-Time Data) mechanism as a completion notifier — the same pattern used by Excel-DNA. The user writes a normal function with `.async = true`; the framework generates all the RTD and threading machinery at compile time.
+Async functions use Excel's RTD (Real-Time Data) mechanism as a completion notifier — the same pattern used by Excel-DNA. The user writes a normal function with `.is_async = true`; the framework generates all the RTD and threading machinery at compile time.
 
 ### Architecture
 
@@ -186,11 +186,11 @@ On the final return, the value is stored as completed. The next recalc returns i
 
 The framework detects async functions automatically:
 
-- `ExcelFunction()` checks `.async = true` and generates the cache-check / thread-pool / RTD subscription logic in `impl`
+- `ExcelFunction()` checks `.is_async = true` and generates the cache-check / thread-pool / RTD subscription logic in `impl`
 - `framework_entry.zig` scans all registered functions at comptime; if any are async, it auto-registers the built-in async RTD server during `xlAutoOpen`
 - `xll_builder.zig` generates combined `DllGetClassObject`/`DllCanUnloadNow` exports that dispatch to both user-defined RTD servers and the async RTD server
 
-The user doesn't declare or configure anything beyond `.async = true`.
+The user doesn't declare or configure anything beyond `.is_async = true`.
 
 ### Pending key mechanism
 

@@ -256,11 +256,13 @@ fn createState() !*lua_State {
 pub fn init() !void {
     if (pool_initialized) return;
 
-    logInfo("Lua: initializing state pool");
+    const xl_helpers = @import("xl_helpers.zig");
+    xl_helpers.debugLogFmt("Lua: initializing {d} state(s)", .{pool_size});
     for (&state_pool) |*slot| {
         slot.L = createState() catch return error.LuaInitFailed;
     }
     pool_initialized = true;
+    xl_helpers.debugLogFmt("Lua: state pool ready ({d} states)", .{pool_size});
 }
 
 /// Load and execute a Lua source string on all pool states.
@@ -332,14 +334,6 @@ pub fn releaseState(L: *lua_State) void {
             slot.in_use.store(false, .release);
             return;
         }
-    }
-}
-
-fn logInfo(comptime msg: []const u8) void {
-    if (@import("builtin").os.tag == .windows) {
-        @import("xl_helpers.zig").debugLog(msg);
-    } else {
-        std.debug.print(msg ++ "\n", .{});
     }
 }
 

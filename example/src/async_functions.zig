@@ -20,7 +20,7 @@ pub const slow_double = ExcelFunction(.{
     .name = "ZigXLL.SLOW_DOUBLE",
     .description = "Double a number (async — simulates slow computation)",
     .category = "Zig Async",
-    .@"async" = true,
+    .is_async = true,
     .params = &[_]ParamMeta{
         .{ .name = "x", .description = "Number to double" },
     },
@@ -41,7 +41,7 @@ pub const monte_carlo = ExcelFunction(.{
     .name = "ZigXLL.MONTE_CARLO",
     .description = "Estimate pi via Monte Carlo (async with progress)",
     .category = "Zig Async",
-    .@"async" = true,
+    .is_async = true,
     .params = &[_]ParamMeta{
         .{ .name = "batches", .description = "Number of batches (more = slower, more accurate)" },
         .{ .name = "samples_per_batch", .description = "Samples per batch" },

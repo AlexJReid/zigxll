@@ -48,11 +48,8 @@ pub fn LuaFunction(comptime meta: anytype) type {
     const description: []const u8 = if (@hasField(@TypeOf(meta), "description")) meta.description else "";
     const category: []const u8 = if (@hasField(@TypeOf(meta), "category")) meta.category else "Lua";
     const lua_params: []const LuaParam = if (@hasField(@TypeOf(meta), "params")) meta.params else &.{};
-    const is_async = if (@hasField(@TypeOf(meta), "async")) meta.@"async" else false;
-    const thread_safe = if (@hasField(@TypeOf(meta), "thread_safe")) meta.thread_safe else false;
-    comptime {
-        if (is_async and thread_safe) @compileError("LuaFunction '" ++ name ++ "': cannot be both async and thread_safe");
-    }
+    const is_async = if (@hasField(@TypeOf(meta), "is_async")) meta.is_async else if (@hasField(@TypeOf(meta), "async")) meta.@"async" else false;
+    const thread_safe = if (is_async) false else if (@hasField(@TypeOf(meta), "thread_safe")) meta.thread_safe else true;
 
     const param_count = lua_params.len;
 
@@ -291,13 +288,13 @@ pub fn LuaFunction(comptime meta: anytype) type {
                     if (src.val.str) |str_ptr| {
                         const len: usize = @intCast(str_ptr[0]);
                         const total = len + 2;
-                        const new_buf = allocator.alloc(u16, total) catch {
+                        if (allocator.alloc(u16, total)) |new_buf| {
+                            @memcpy(new_buf, str_ptr[0..total]);
+                            copies[i].val = .{ .str = new_buf.ptr };
+                        } else |_| {
                             copies[i].xltype = xl.xltypeErr;
                             copies[i].val = .{ .err = xl.xlerrValue };
-                            continue;
-                        };
-                        @memcpy(new_buf, str_ptr[0..total]);
-                        copies[i].val = .{ .str = new_buf.ptr };
+                        }
                     }
                 }
             }

@@ -192,7 +192,7 @@ pub const myPrice = ExcelFunction(.{
 });
 ```
 
-**Important:** RTD wrapper functions must set `.thread_safe = false`. The underlying `xlfRtd` call is not thread-safe and must run on Excel's main thread. (Async functions handle this automatically — `.async = true` forces `thread_safe = false`.)
+**Important:** RTD wrapper functions must set `.thread_safe = false`. The underlying `xlfRtd` call is not thread-safe and must run on Excel's main thread. (Async functions handle this automatically — `.is_async = true` forces `thread_safe = false`.)
 
 Excel handles the RTD subscription automatically — the cell updates whenever the RTD server pushes a new value. Multiple topics are supported:
 

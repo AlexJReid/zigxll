@@ -64,3 +64,56 @@ pub const lua_fib = LuaFunction(.{
         .{ .name = "n", .description = "Index" },
     },
 });
+
+// -- Thread-safe Lua functions ------------------------------------------------
+// These run on Excel's multi-threaded calc engine. Each thread gets its own
+// Lua state from the pool, so there's no mutex contention.
+
+pub const lua_is_prime = LuaFunction(.{
+    .name = "Lua.IsPrime",
+    .lua_name = "is_prime",
+    .description = "Check if a number is prime (Lua, thread-safe)",
+    .category = "Lua Functions",
+
+    .params = &[_]LuaParam{
+        .{ .name = "n", .description = "Number to check" },
+    },
+});
+
+pub const lua_sum_range = LuaFunction(.{
+    .name = "Lua.SumRange",
+    .lua_name = "sum_range",
+    .description = "Sum integers from lo to hi (Lua, thread-safe)",
+    .category = "Lua Functions",
+
+    .params = &[_]LuaParam{
+        .{ .name = "lo", .description = "Start of range" },
+        .{ .name = "hi", .description = "End of range" },
+    },
+});
+
+// -- Async Lua functions ------------------------------------------------------
+// These run on the framework's thread pool. The cell shows #N/A while the
+// Lua function executes, then updates with the result via RTD.
+
+pub const lua_slow_fib = LuaFunction(.{
+    .name = "Lua.SlowFib",
+    .lua_name = "slow_fib",
+    .description = "Fibonacci with simulated delay (Lua, async)",
+    .category = "Lua Functions",
+    .is_async = true,
+    .params = &[_]LuaParam{
+        .{ .name = "n", .description = "Index" },
+    },
+});
+
+pub const lua_slow_prime_count = LuaFunction(.{
+    .name = "Lua.SlowPrimeCount",
+    .lua_name = "slow_prime_count",
+    .description = "Count primes up to limit (Lua, async)",
+    .category = "Lua Functions",
+    .is_async = true,
+    .params = &[_]LuaParam{
+        .{ .name = "limit", .description = "Upper bound" },
+    },
+});

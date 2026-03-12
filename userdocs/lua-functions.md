@@ -119,8 +119,8 @@ pub const my_func = LuaFunction(.{
 | `description` | no | `""` | Shown in Excel's Insert Function dialog. |
 | `category` | no | `"Lua"` | Groups the function in Excel's function list. |
 | `params` | no | `&.{}` | Array of `LuaParam` structs. Must match the Lua function's arity. |
-| `thread_safe` | no | `false` | When `true`, Excel can call from multiple threads. Each thread acquires its own Lua state from the pool. |
-| `async` | no | `false` | When `true`, runs on a worker thread with result caching via RTD. Same pattern as Zig async functions. |
+| `thread_safe` | no | `true` | Enables Multi-Threaded Recalculation. Each thread acquires its own Lua state from the pool. Set to `false` if your Lua function relies on global state. |
+| `is_async` | no | `false` | When `true`, runs on a worker thread with result caching via RTD. Same pattern as Zig async functions. Automatically sets `thread_safe = false`. |
 
 ## Parameter types
 
@@ -163,31 +163,33 @@ If anything goes wrong (no state available, function not found, type conversion 
 
 ## Async Lua functions
 
-Add `.async = true` to run a Lua function on a worker thread. The first call returns `#N/A` while computing; once complete, the result is cached and returned instantly on recalculation.
+Add `.is_async = true` to run a Lua function on a worker thread. The first call returns `#N/A` while computing; once complete, the result is cached and returned instantly on recalculation.
 
 ```zig
 pub const lua_slow = LuaFunction(.{
     .name = "Lua.SlowCalc",
     .lua_name = "slow_calc",
     .description = "A slow calculation (async)",
-    .@"async" = true,
+    .is_async = true,
     .params = &[_]LuaParam{
         .{ .name = "x", .description = "Input value" },
     },
 });
 ```
 
-This uses the same async infrastructure as Zig `ExcelFunction(.{ .async = true })` — same cache, same RTD server, same fire-and-forget pattern.
+This uses the same async infrastructure as Zig `ExcelFunction(.{ .is_async = true })` — same cache, same RTD server, same fire-and-forget pattern.
 
-## Thread-safe Lua functions
+## Thread safety
 
-Add `.thread_safe = true` to allow Excel to call the function from multiple threads during parallel recalculation. Each thread acquires its own Lua state from the pool, so there is no contention.
+Lua functions are **thread-safe by default** — Excel can call them from multiple threads during parallel recalculation. Each thread acquires its own Lua state from the pool, so there is no contention.
+
+Set `.thread_safe = false` if your Lua function relies on global state that must be consistent across calls:
 
 ```zig
-pub const lua_fast = LuaFunction(.{
-    .name = "Lua.FastCalc",
-    .lua_name = "fast_calc",
-    .thread_safe = true,
+pub const lua_stateful = LuaFunction(.{
+    .name = "Lua.Stateful",
+    .lua_name = "stateful_calc",
+    .thread_safe = false,
     .params = &[_]LuaParam{
         .{ .name = "x" },
     },
@@ -294,4 +296,4 @@ end
 - Maximum 8 parameters per function (same as `ExcelFunction`)
 - No matrix/table parameter or return type support yet
 - Pool states are independent — global variable mutations don't propagate between states (use `xll.get`/`xll.set` for shared state)
-- `async` and `thread_safe` cannot both be `true` on the same function (compile error)
+- `is_async = true` automatically forces `thread_safe = false` (async functions use `xlfRtd` which must run on Excel's main thread)
