@@ -1,0 +1,97 @@
+[
+  {
+    "name": "LuaFromJson.Add",
+    "lua_name": "add",
+    "description": "Add two numbers (Lua)",
+    "category": "Lua Functions",
+    "params": [
+      { "name": "x", "description": "First number" },
+      { "name": "y", "description": "Second number" }
+    ]
+  },
+  {
+    "name": "LuaFromJson.Greet",
+    "lua_name": "greet",
+    "description": "Greet someone by name (Lua)",
+    "category": "Lua Functions",
+    "params": [
+      { "name": "name", "type": "string", "description": "Name to greet" }
+    ]
+  },
+  {
+    "name": "LuaFromJson.Hypotenuse",
+    "lua_name": "hypotenuse",
+    "description": "Calculate hypotenuse (Lua)",
+    "category": "Lua Functions",
+    "params": [
+      { "name": "a", "description": "Side a" },
+      { "name": "b", "description": "Side b" }
+    ]
+  },
+  {
+    "name": "LuaFromJson.IsEven",
+    "lua_name": "is_even",
+    "description": "Check if a number is even (Lua)",
+    "category": "Lua Functions",
+    "params": [
+      { "name": "n", "description": "Number to check" }
+    ]
+  },
+  {
+    "name": "LuaFromJson.Factorial",
+    "lua_name": "factorial",
+    "description": "Calculate factorial (Lua)",
+    "category": "Lua Functions",
+    "params": [
+      { "name": "n", "description": "Number" }
+    ]
+  },
+  {
+    "name": "LuaFromJson.Fib",
+    "lua_name": "fib",
+    "description": "Calculate Fibonacci number (Lua)",
+    "category": "Lua Functions",
+    "params": [
+      { "name": "n", "description": "Index" }
+    ]
+  },
+  {
+    "name": "LuaFromJson.IsPrime",
+    "lua_name": "is_prime",
+    "description": "Check if a number is prime (Lua, thread-safe)",
+    "category": "Lua Functions",
+    "params": [
+      { "name": "n", "description": "Number to check" }
+    ]
+  },
+  {
+    "name": "LuaFromJson.SumRange",
+    "lua_name": "sum_range",
+    "description": "Sum integers from lo to hi (Lua, thread-safe)",
+    "category": "Lua Functions",
+    "params": [
+      { "name": "lo", "description": "Start of range" },
+      { "name": "hi", "description": "End of range" }
+    ]
+  },
+  {
+    "name": "LuaFromJson.SlowFib",
+    "lua_name": "slow_fib",
+    "description": "Fibonacci with simulated delay (Lua, async)",
+    "category": "Lua Functions",
+    "async": true,
+    "params": [
+      { "name": "n", "description": "Index" }
+    ]
+  },
+  {
+    "name": "LuaFromJson.SlowPrimeCount",
+    "lua_name": "slow_prime_count",
+    "description": "Count primes up to limit (Lua, async)",
+    "category": "Lua Functions",
+    "async": true,
+    "params": [
+      { "name": "limit", "description": "Upper bound" }
+    ]
+  }
+]

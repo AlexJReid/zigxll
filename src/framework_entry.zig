@@ -31,6 +31,14 @@ pub fn getAllFunctions() []const type {
         const module_funcs = function_discovery.getAllFunctions(module);
         funcs = funcs ++ module_funcs;
     }
+
+    // Include functions generated from lua_json if present
+    if (@hasDecl(root, "lua_json_functions")) {
+        const lua_json_mod = root.lua_json_functions;
+        const json_funcs = function_discovery.getAllFunctions(lua_json_mod);
+        funcs = funcs ++ json_funcs;
+    }
+
     return funcs;
 }
 

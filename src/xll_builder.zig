@@ -9,6 +9,7 @@ const xl = xll.xl;
 
 pub const function_discovery = xll.function_discovery;
 pub const user_functions = user_module;
+pub const lua_json_functions = @import("lua_json_module");
 
 // Export all XLL entry points - these call into the framework
 export fn xlAutoOpen() callconv(.c) c_int {

@@ -21,6 +21,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .enable_lua = true,
+        .lua_json = b.path("src/lua_functions.json"),
     });
     // Install the XLL (rename .dll to .xll)
     const install_xll = b.addInstallFile(xll.getEmittedBin(), "lib/my_excel_functions.xll");

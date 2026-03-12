@@ -111,6 +111,7 @@ pub fn buildXll(
         optimize: std.builtin.OptimizeMode,
         enable_lua: bool = false,
         lua_states: u32 = 0,
+        lua_json: ?std.Build.LazyPath = null,
     },
 ) *std.Build.Step.Compile {
     const target = options.target;
@@ -150,6 +151,30 @@ pub fn buildXll(
     xll.root_module.addImport("user_module", options.user_module);
     // Add build options so framework can log XLL name
     xll.root_module.addImport("build_options", build_options.createModule());
+
+    // Generate Lua function definitions from JSON, or provide empty stub
+    {
+        const wf = b.addWriteFiles();
+        const gen_source = if (options.lua_json) |json_path| blk: {
+            const lua_json_gen = @import("src/lua_json_gen.zig");
+            const path3 = json_path.getPath3(b, null);
+            const json_bytes = path3.root_dir.handle.readFileAlloc(
+                b.allocator,
+                path3.sub_path,
+                1024 * 1024,
+            ) catch @panic("Failed to read lua_json file");
+            const generated_src = lua_json_gen.generate(b.allocator, json_bytes) catch
+                @panic("Failed to generate Lua function definitions from JSON");
+            break :blk wf.add("lua_json_functions.zig", generated_src);
+        } else wf.add("lua_json_functions.zig", "// No JSON Lua functions configured\n");
+        const lua_json_module = b.createModule(.{
+            .root_source_file = gen_source,
+            .target = target,
+            .optimize = optimize,
+        });
+        lua_json_module.addImport("xll", xll_framework);
+        xll.root_module.addImport("lua_json_module", lua_json_module);
+    }
 
     // Add Excel SDK from xll dependency
     const excel_include = xll_dep.path("excel/include");

@@ -6,6 +6,7 @@ const test_options = @import("test_options");
 comptime {
     _ = @import("xlvalue.zig");
     _ = @import("rtd_tests.zig");
+    _ = @import("lua_json_gen.zig");
     if (test_options.enable_lua) {
         _ = @import("lua_tests.zig");
     }

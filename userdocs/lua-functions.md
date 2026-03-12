@@ -10,9 +10,13 @@ Lua support is optional and off by default. It compiles Lua 5.4 from source as p
 
 ## Quick start
 
-### 1. Enable Lua in your build
+There are two ways to register Lua functions: **JSON** (no Zig required) and **Zig** (using `LuaFunction()`). Both can be used together in the same project.
 
-In your `build.zig`, pass `.enable_lua = true` to `buildXll()`. This is the only change needed to your build file (the rest of your `build.zig` stays the same as shown in the main [README](../README.md#quick-start)):
+### Option A: JSON definitions (no Zig required)
+
+This approach lets you define Excel function signatures in a JSON file. You only need to touch `build.zig` once during initial setup.
+
+#### 1. Enable Lua and point to your JSON file in `build.zig`
 
 ```zig
 const xll = xll_build.buildXll(b, .{
@@ -20,11 +24,12 @@ const xll = xll_build.buildXll(b, .{
     .user_module = user_module,
     .target = target,
     .optimize = optimize,
-    .enable_lua = true,  // add this line
+    .enable_lua = true,
+    .lua_json = b.path("src/lua_functions.json"),
 });
 ```
 
-### 2. Write a Lua script
+#### 2. Write a Lua script
 
 **`src/lua/functions.lua`:**
 
@@ -42,7 +47,105 @@ function hypotenuse(a, b)
 end
 ```
 
-### 3. Declare Excel function signatures
+#### 3. Define function signatures in JSON
+
+**`src/lua_functions.json`:**
+
+```json
+[
+  {
+    "name": "Lua.Add",
+    "lua_name": "add",
+    "description": "Add two numbers",
+    "category": "Lua Functions",
+    "params": [
+      { "name": "x", "description": "First number" },
+      { "name": "y", "description": "Second number" }
+    ]
+  },
+  {
+    "name": "Lua.Greet",
+    "lua_name": "greet",
+    "description": "Greet someone by name",
+    "params": [
+      { "name": "name", "type": "string", "description": "Name to greet" }
+    ]
+  },
+  {
+    "name": "Lua.Hypotenuse",
+    "lua_name": "hypotenuse",
+    "description": "Calculate hypotenuse",
+    "category": "Lua Functions",
+    "params": [
+      { "name": "a", "description": "Side a" },
+      { "name": "b", "description": "Side b" }
+    ]
+  }
+]
+```
+
+#### 4. Embed scripts in main.zig
+
+Your `main.zig` still needs to embed the Lua scripts (so they're compiled into the XLL binary):
+
+```zig
+pub const function_modules = .{};  // can be empty if all Lua funcs are in JSON
+
+pub const lua_scripts = .{
+    .{ .name = "functions", .source = @embedFile("lua/functions.lua") },
+};
+```
+
+The JSON file is read at build time only — it is not embedded in the XLL. The build system generates `LuaFunction` declarations from it, which are compiled into the binary like hand-written Zig definitions.
+
+#### JSON format reference
+
+Each function object supports these fields:
+
+| Field | Required | Default | Notes |
+|---|---|---|---|
+| `name` | yes | | Excel function name (dots OK for namespacing) |
+| `lua_name` | yes | | Lua global function to call |
+| `description` | no | `""` | Shown in Excel's Insert Function dialog |
+| `category` | no | `"Lua"` | Groups the function in Excel's function list |
+| `params` | no | `[]` | Array of parameter objects |
+| `async` | no | `false` | Run on worker thread with result caching via RTD |
+
+Each parameter object supports:
+
+| Field | Required | Default | Notes |
+|---|---|---|---|
+| `name` | yes | | Parameter name shown in Excel |
+| `type` | no | `"number"` | One of `"number"`, `"string"`, `"boolean"` |
+| `description` | no | | Shown in Insert Function dialog |
+
+The JSON can be a top-level array or an object with a `"functions"` key:
+
+```json
+{ "functions": [ ... ] }
+```
+
+### Option B: Zig definitions
+
+If you prefer compile-time type safety or are already writing Zig functions, use `LuaFunction()` directly.
+
+#### 1. Enable Lua in your build
+
+```zig
+const xll = xll_build.buildXll(b, .{
+    .name = "my_functions",
+    .user_module = user_module,
+    .target = target,
+    .optimize = optimize,
+    .enable_lua = true,
+});
+```
+
+#### 2. Write a Lua script
+
+Same as Option A above.
+
+#### 3. Declare Excel function signatures in Zig
 
 **`src/lua_functions.zig`:**
 
@@ -84,9 +187,9 @@ pub const lua_hypotenuse = LuaFunction(.{
 });
 ```
 
-### 4. Wire up in main.zig
+#### 4. Wire up in main.zig
 
-Add your Lua function module to `function_modules` as you would any other module, and add a `lua_scripts` tuple to embed your Lua source files:
+Add your Lua function module to `function_modules` and embed your scripts:
 
 ```zig
 pub const function_modules = .{
@@ -98,7 +201,11 @@ pub const lua_scripts = .{
 };
 ```
 
-Each script is embedded into the XLL binary and executed when the add-in loads (`xlAutoOpen`), making its global functions available for the `LuaFunction` wrappers to call.
+### Mixing both approaches
+
+JSON-defined and Zig-defined Lua functions can coexist. Use `lua_json` in `build.zig` and `LuaFunction()` in `function_modules` at the same time — they call into the same Lua state pool and scripts. Just make sure the Excel function names don't collide.
+
+Each script is embedded into the XLL binary and executed when the add-in loads (`xlAutoOpen`), making its global functions available for both JSON and Zig wrappers to call.
 
 ## LuaFunction options
 
