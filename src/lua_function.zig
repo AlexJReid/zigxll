@@ -11,6 +11,11 @@ const allocator = std.heap.c_allocator;
 
 const ParamMeta = @import("excel_function.zig").ParamMeta;
 
+// Async support
+const async_cache = @import("async_cache.zig");
+const async_infra = @import("async_infra.zig");
+const async_handler = @import("async_handler.zig");
+
 /// Parameter type for Lua functions (declared statically since there's no Zig function to infer from)
 pub const LuaParamType = enum {
     number,
@@ -43,9 +48,10 @@ pub fn LuaFunction(comptime meta: anytype) type {
     const description: []const u8 = if (@hasField(@TypeOf(meta), "description")) meta.description else "";
     const category: []const u8 = if (@hasField(@TypeOf(meta), "category")) meta.category else "Lua";
     const lua_params: []const LuaParam = if (@hasField(@TypeOf(meta), "params")) meta.params else &.{};
+    const is_async = if (@hasField(@TypeOf(meta), "async")) meta.@"async" else false;
     const thread_safe = if (@hasField(@TypeOf(meta), "thread_safe")) meta.thread_safe else false;
     comptime {
-        if (thread_safe) @compileError("LuaFunction does not support thread_safe = true (Lua states are not thread-safe)");
+        if (is_async and thread_safe) @compileError("LuaFunction '" ++ name ++ "': cannot be both async and thread_safe");
     }
 
     const param_count = lua_params.len;
@@ -86,7 +92,7 @@ pub fn LuaFunction(comptime meta: anytype) type {
         pub const excel_param_count = param_count;
         pub const excel_type_string = type_string;
         pub const excel_thread_safe = thread_safe;
-        pub const excel_is_async = false;
+        pub const excel_is_async = is_async;
         pub const is_excel_function = true;
         pub const excel_export_name = export_name;
 
@@ -178,13 +184,8 @@ pub fn LuaFunction(comptime meta: anytype) type {
             }
         }
 
-        /// Core: acquire state, push function + args, pcall, pull result
-        fn callLua(args: [param_count]*xl.XLOPER12) *xl.XLOPER12 {
-            const L = lua.getState() orelse {
-                xl_helpers.debugLog("LuaFunction '" ++ name ++ "': Lua state not initialized");
-                return makeErrorValue();
-            };
-
+        /// Execute a Lua call on a given state: push function + args, pcall, pull result.
+        fn callOnState(L: *lua.lua_State, args: [param_count]*xl.XLOPER12) *xl.XLOPER12 {
             // Get the function from globals
             _ = lua.lua_getglobal(L, lua_name.ptr);
             if (lua.lua_type(L, -1) != lua.LUA_TFUNCTION) {
@@ -204,7 +205,6 @@ pub fn LuaFunction(comptime meta: anytype) type {
 
             // Call
             if (lua.lua_pcall(L, @intCast(param_count), 1, 0) != lua.LUA_OK) {
-                // Pull error message from Lua stack
                 var err_len: usize = 0;
                 const err_ptr = lua.lua_tolstring(L, -1, &err_len);
                 if (err_ptr) |p| {
@@ -219,50 +219,229 @@ pub fn LuaFunction(comptime meta: anytype) type {
             return pullResult(L);
         }
 
+        /// Sync call. Thread-safe functions acquire any pool state via CAS;
+        /// non-thread-safe functions lock the main state (slot 0).
+        fn callLua(args: [param_count]*xl.XLOPER12) *xl.XLOPER12 {
+            if (thread_safe) {
+                const L = lua.acquireState() orelse {
+                    xl_helpers.debugLog("LuaFunction '" ++ name ++ "': no Lua state available");
+                    return makeErrorValue();
+                };
+                defer lua.releaseState(L);
+                return callOnState(L, args);
+            } else {
+                lua.lockMain();
+                defer lua.unlockMain();
+                const L = lua.getState() orelse {
+                    xl_helpers.debugLog("LuaFunction '" ++ name ++ "': Lua state not initialized");
+                    return makeErrorValue();
+                };
+                return callOnState(L, args);
+            }
+        }
+
+        // ================================================================
+        // Async support: topic key, worker, cache logic
+        // ================================================================
+
+        /// Argument pack duplicated for the async worker thread.
+        const LuaAsyncArgs = struct {
+            key: []const u8,
+            /// Heap-allocated copies of XLOPER12 values (worker owns them).
+            xloper_copies: [param_count]xl.XLOPER12,
+        };
+
+        /// Build a topic key from function name + serialized Lua args.
+        fn buildLuaTopicKey(args: [param_count]*xl.XLOPER12) ![]const u8 {
+            var buf: std.ArrayListUnmanaged(u8) = .empty;
+            errdefer buf.deinit(allocator);
+            const writer = buf.writer(allocator);
+
+            try writer.writeAll(name);
+            inline for (0..param_count) |i| {
+                try writer.writeByte('|');
+                const val = XLValue.fromXLOPER12(allocator, args[i].*, false);
+                switch (lua_params[i].type) {
+                    .number => {
+                        const num = val.as_double() catch 0;
+                        try writer.print("{d:.15}", .{num});
+                    },
+                    .string => {
+                        const str = val.as_utf8str() catch "";
+                        defer if (str.len > 0) allocator.free(str);
+                        try writer.writeAll(str);
+                    },
+                    .boolean => {
+                        const b = val.as_bool() catch false;
+                        try writer.writeAll(if (b) "T" else "F");
+                    },
+                }
+            }
+            return buf.toOwnedSlice(allocator);
+        }
+
+        /// Duplicate XLOPER12 values for the worker thread.
+        fn dupeXlopers(args: [param_count]*xl.XLOPER12) [param_count]xl.XLOPER12 {
+            var copies: [param_count]xl.XLOPER12 = undefined;
+            inline for (0..param_count) |i| {
+                const src = args[i];
+                copies[i] = src.*;
+                // Deep-copy strings
+                if ((src.xltype & xl.xltypeStr) != 0) {
+                    if (src.val.str) |str_ptr| {
+                        const len: usize = @intCast(str_ptr[0]);
+                        const total = len + 2;
+                        const new_buf = allocator.alloc(u16, total) catch {
+                            copies[i].xltype = xl.xltypeErr;
+                            copies[i].val = .{ .err = xl.xlerrValue };
+                            continue;
+                        };
+                        @memcpy(new_buf, str_ptr[0..total]);
+                        copies[i].val = .{ .str = new_buf.ptr };
+                    }
+                }
+            }
+            return copies;
+        }
+
+        /// Free duplicated XLOPER12 string data.
+        fn freeXloperCopies(copies: *[param_count]xl.XLOPER12) void {
+            inline for (0..param_count) |i| {
+                if ((copies[i].xltype & xl.xltypeStr) != 0) {
+                    if (copies[i].val.str) |str_ptr| {
+                        const len: usize = @intCast(str_ptr[0]);
+                        allocator.free(str_ptr[0 .. len + 2]);
+                    }
+                }
+            }
+        }
+
+        /// Worker function: acquires a Lua state, runs the function, stores result.
+        fn asyncWorker(pack: *LuaAsyncArgs) void {
+            defer {
+                freeXloperCopies(&pack.xloper_copies);
+                allocator.free(pack.key);
+                allocator.destroy(pack);
+            }
+
+            const L = lua.acquireState() orelse {
+                xl_helpers.debugLog("LuaFunction '" ++ name ++ "': no Lua state available for async");
+                async_infra.storeResult(pack.key, makeErrorValue());
+                return;
+            };
+            defer lua.releaseState(L);
+
+            // Build pointer array from our copies
+            var ptrs: [param_count]*xl.XLOPER12 = undefined;
+            inline for (0..param_count) |i| {
+                ptrs[i] = &pack.xloper_copies[i];
+            }
+
+            const result = callOnState(L, ptrs);
+            async_infra.storeResult(pack.key, result);
+        }
+
+        /// Async impl: check cache → return cached / spawn worker + subscribe RTD.
+        fn asyncImpl(args: [param_count]*xl.XLOPER12) *xl.XLOPER12 {
+            const key = buildLuaTopicKey(args) catch return makeErrorValue();
+            defer allocator.free(key);
+
+            const cache = async_cache.getGlobalCache();
+
+            // Cache hit?
+            if (cache.get(key)) |entry| {
+                if (entry.completed) {
+                    return async_infra.cloneXloper(entry.xloper);
+                }
+                return async_infra.rtdSubscribe(key) catch return makeErrorValue();
+            }
+
+            // Cache miss — spawn async work
+            const pack = allocator.create(LuaAsyncArgs) catch return makeErrorValue();
+            const worker_key = allocator.dupe(u8, key) catch {
+                allocator.destroy(pack);
+                return makeErrorValue();
+            };
+            pack.* = .{
+                .key = worker_key,
+                .xloper_copies = dupeXlopers(args),
+            };
+
+            // Mark in-progress
+            async_infra.markInProgress(key);
+
+            // Subscribe via RTD first (must happen before spawning worker)
+            const rtd_result = async_infra.rtdSubscribe(key) catch {
+                freeXloperCopies(&pack.xloper_copies);
+                allocator.free(pack.key);
+                allocator.destroy(pack);
+                return makeErrorValue();
+            };
+
+            const handle = async_infra.createWorkerThread(LuaAsyncArgs, asyncWorker, pack);
+            if (handle == null) {
+                freeXloperCopies(&pack.xloper_copies);
+                allocator.free(pack.key);
+                allocator.destroy(pack);
+            }
+
+            return rtd_result;
+        }
+
         // Generated C-callable impl — same arity switch as ExcelFunction
+        // Dispatches to async path when is_async is true.
         const Impl = switch (param_count) {
             0 => struct {
                 fn impl() callconv(.c) *xl.XLOPER12 {
+                    if (is_async) return asyncImpl(.{});
                     return callLua(.{});
                 }
             },
             1 => struct {
                 fn impl(a1: *xl.XLOPER12) callconv(.c) *xl.XLOPER12 {
+                    if (is_async) return asyncImpl(.{a1});
                     return callLua(.{a1});
                 }
             },
             2 => struct {
                 fn impl(a1: *xl.XLOPER12, a2: *xl.XLOPER12) callconv(.c) *xl.XLOPER12 {
+                    if (is_async) return asyncImpl(.{ a1, a2 });
                     return callLua(.{ a1, a2 });
                 }
             },
             3 => struct {
                 fn impl(a1: *xl.XLOPER12, a2: *xl.XLOPER12, a3: *xl.XLOPER12) callconv(.c) *xl.XLOPER12 {
+                    if (is_async) return asyncImpl(.{ a1, a2, a3 });
                     return callLua(.{ a1, a2, a3 });
                 }
             },
             4 => struct {
                 fn impl(a1: *xl.XLOPER12, a2: *xl.XLOPER12, a3: *xl.XLOPER12, a4: *xl.XLOPER12) callconv(.c) *xl.XLOPER12 {
+                    if (is_async) return asyncImpl(.{ a1, a2, a3, a4 });
                     return callLua(.{ a1, a2, a3, a4 });
                 }
             },
             5 => struct {
                 fn impl(a1: *xl.XLOPER12, a2: *xl.XLOPER12, a3: *xl.XLOPER12, a4: *xl.XLOPER12, a5: *xl.XLOPER12) callconv(.c) *xl.XLOPER12 {
+                    if (is_async) return asyncImpl(.{ a1, a2, a3, a4, a5 });
                     return callLua(.{ a1, a2, a3, a4, a5 });
                 }
             },
             6 => struct {
                 fn impl(a1: *xl.XLOPER12, a2: *xl.XLOPER12, a3: *xl.XLOPER12, a4: *xl.XLOPER12, a5: *xl.XLOPER12, a6: *xl.XLOPER12) callconv(.c) *xl.XLOPER12 {
+                    if (is_async) return asyncImpl(.{ a1, a2, a3, a4, a5, a6 });
                     return callLua(.{ a1, a2, a3, a4, a5, a6 });
                 }
             },
             7 => struct {
                 fn impl(a1: *xl.XLOPER12, a2: *xl.XLOPER12, a3: *xl.XLOPER12, a4: *xl.XLOPER12, a5: *xl.XLOPER12, a6: *xl.XLOPER12, a7: *xl.XLOPER12) callconv(.c) *xl.XLOPER12 {
+                    if (is_async) return asyncImpl(.{ a1, a2, a3, a4, a5, a6, a7 });
                     return callLua(.{ a1, a2, a3, a4, a5, a6, a7 });
                 }
             },
             8 => struct {
                 fn impl(a1: *xl.XLOPER12, a2: *xl.XLOPER12, a3: *xl.XLOPER12, a4: *xl.XLOPER12, a5: *xl.XLOPER12, a6: *xl.XLOPER12, a7: *xl.XLOPER12, a8: *xl.XLOPER12) callconv(.c) *xl.XLOPER12 {
+                    if (is_async) return asyncImpl(.{ a1, a2, a3, a4, a5, a6, a7, a8 });
                     return callLua(.{ a1, a2, a3, a4, a5, a6, a7, a8 });
                 }
             },

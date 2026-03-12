@@ -8,6 +8,7 @@ pub fn build(b: *std.Build) void {
     });
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSmall });
     const enable_lua = b.option(bool, "lua", "Enable Lua scripting support") orelse false;
+    const lua_states = b.option(u32, "lua_states", "Number of Lua states in pool (default: CPU cores, clamped 2-16)") orelse 0;
 
     // Add include path for ZLS to find C headers during @cImport analysis
     b.addSearchPrefix("excel");
@@ -24,6 +25,7 @@ pub fn build(b: *std.Build) void {
     const framework_build_options = b.addOptions();
     framework_build_options.addOption([]const u8, "xll_name", "zigxll (framework test build)");
     framework_build_options.addOption([]const u8, "framework_version", @import("build.zig.zon").version);
+    framework_build_options.addOption(u32, "lua_states", lua_states);
 
     const xll = b.addLibrary(.{
         .name = "zigxll",
@@ -108,6 +110,7 @@ pub fn buildXll(
         target: std.Build.ResolvedTarget,
         optimize: std.builtin.OptimizeMode,
         enable_lua: bool = false,
+        lua_states: u32 = 0,
     },
 ) *std.Build.Step.Compile {
     const target = options.target;
@@ -117,6 +120,7 @@ pub fn buildXll(
     const build_options = b.addOptions();
     build_options.addOption([]const u8, "xll_name", options.name);
     build_options.addOption([]const u8, "framework_version", @import("build.zig.zon").version);
+    build_options.addOption(u32, "lua_states", options.lua_states);
 
     // Get xll dependency
     const xll_dep = b.dependency("xll", .{});

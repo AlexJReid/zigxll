@@ -32,7 +32,7 @@ What Zig gives us:
 - Cross-compilation from Mac/Linux via [xwin](https://jake-shadle.github.io/xwin/)
 - Async functions - add `.async = true` to run on a thread pool with automatic caching. See [function docs](./userdocs/functions.md#async-functions)
 - Pure Zig COM RTD servers - no ATL/MFC. See [RTD docs](./userdocs/rtd-servers.md)
-- Embed Lua scripts as Excel functions with automatic type marshaling. See [Lua docs](./userdocs/lua-functions.md)
+- Embed Lua scripts as Excel functions with automatic type marshaling, including async and thread-safe support. See [Lua docs](./userdocs/lua-functions.md)
 
 ## Quick start
 

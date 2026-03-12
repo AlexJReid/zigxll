@@ -1,10 +1,10 @@
 # Lua Functions
 
-ZigXLL can embed Lua scripts in your XLL, letting you write Excel functions in Lua instead of Zig. The framework handles all marshaling between Excel and Lua at compile time, with no runtime registry or stub pools needed.
+ZigXLL can embed Lua scripts in your XLL, letting you write Excel functions in Lua instead of Zig. The framework handles all marshaling between Excel and Lua at compile time, with no runtime registry or stub pools needed. Lua functions support async execution and thread-safe parallel recalculation.
 
 ## Overview
 
-You write Lua scripts with plain functions, embed them with `@embedFile`, and declare their Excel signatures using `LuaFunction()`. The framework generates C-callable wrappers at compile time (same pattern as `ExcelFunction()`) and manages a shared Lua state at runtime.
+You write Lua scripts with plain functions, embed them with `@embedFile`, and declare their Excel signatures using `LuaFunction()`. The framework generates C-callable wrappers at compile time (same pattern as `ExcelFunction()`) and manages a pool of Lua states at runtime.
 
 Lua support is optional and off by default. It compiles Lua 5.4 from source as part of the build, so there are no external dependencies to manage.
 
@@ -119,7 +119,8 @@ pub const my_func = LuaFunction(.{
 | `description` | no | `""` | Shown in Excel's Insert Function dialog. |
 | `category` | no | `"Lua"` | Groups the function in Excel's function list. |
 | `params` | no | `&.{}` | Array of `LuaParam` structs. Must match the Lua function's arity. |
-| `thread_safe` | | `false` | Always false. Lua states are not thread-safe. Setting `true` is a compile error. |
+| `thread_safe` | no | `false` | When `true`, Excel can call from multiple threads. Each thread acquires its own Lua state from the pool. |
+| `async` | no | `false` | When `true`, runs on a worker thread with result caching via RTD. Same pattern as Zig async functions. |
 
 ## Parameter types
 
@@ -141,20 +142,101 @@ At compile time, `LuaFunction()` generates:
 2. An `@export` of the impl function (dots in names become underscores)
 3. Excel registration metadata (type string, descriptions)
 
-At runtime, when Excel calls the function:
+At runtime, the framework maintains a pool of independent Lua states (default 4, [configurable](#pool-size)), each loaded with identical scripts. When Excel calls the function:
 
-1. The wrapper acquires the global Lua state
+1. **Non-thread-safe**: locks the main state (slot 0)
+2. **Thread-safe**: acquires any free state from the pool via atomic CAS (no contention — each thread gets its own state)
+3. **Async**: spawns a worker thread that acquires a pool state, runs the Lua function, stores the result in the async cache, and notifies Excel via RTD
+
+For sync calls (both thread-safe and non-thread-safe), the wrapper:
+
+1. Acquires a Lua state
 2. Looks up the Lua function by name (`lua_name`)
 3. Pushes each XLOPER12 argument onto the Lua stack, converting based on the declared `LuaParamType`
 4. Calls the Lua function via `lua_pcall`
 5. Pulls the return value off the Lua stack and wraps it as an XLOPER12
-6. Returns the result to Excel
+6. Releases the state and returns the result to Excel
 
-If anything goes wrong (Lua state not initialized, function not found, type conversion failure, Lua runtime error), the wrapper returns `#VALUE!`.
+For async calls, the same Lua call happens on a worker thread, and the result is cached so subsequent recalculations return instantly.
+
+If anything goes wrong (no state available, function not found, type conversion failure, Lua runtime error), the wrapper returns `#VALUE!`.
+
+## Async Lua functions
+
+Add `.async = true` to run a Lua function on a worker thread. The first call returns `#N/A` while computing; once complete, the result is cached and returned instantly on recalculation.
+
+```zig
+pub const lua_slow = LuaFunction(.{
+    .name = "Lua.SlowCalc",
+    .lua_name = "slow_calc",
+    .description = "A slow calculation (async)",
+    .@"async" = true,
+    .params = &[_]LuaParam{
+        .{ .name = "x", .description = "Input value" },
+    },
+});
+```
+
+This uses the same async infrastructure as Zig `ExcelFunction(.{ .async = true })` — same cache, same RTD server, same fire-and-forget pattern.
+
+## Thread-safe Lua functions
+
+Add `.thread_safe = true` to allow Excel to call the function from multiple threads during parallel recalculation. Each thread acquires its own Lua state from the pool, so there is no contention.
+
+```zig
+pub const lua_fast = LuaFunction(.{
+    .name = "Lua.FastCalc",
+    .lua_name = "fast_calc",
+    .thread_safe = true,
+    .params = &[_]LuaParam{
+        .{ .name = "x" },
+    },
+});
+```
+
+**Important**: since each pool state is independent, global variables set by one call may not be visible to the next (which may run on a different state). Don't rely on global mutation across calls. Use `xll.get`/`xll.set` for [shared state](#shared-state).
+
+## Pool size
+
+The number of Lua states defaults to 4. Override it in your `build.zig`:
+
+```zig
+const xll = xll_build.buildXll(b, .{
+    .name = "my_functions",
+    .user_module = user_module,
+    .target = target,
+    .optimize = optimize,
+    .enable_lua = true,
+    .lua_states = 8,
+});
+```
+
+Or from the command line when building the framework directly:
+
+```bash
+zig build -Dlua_states=8
+```
+
+A value of 0 (the default) uses 4 states. Each state is an independent Lua VM with its own globals and GC, so memory usage scales linearly.
+
+## Shared state
+
+Since pool states are independent, global variables don't propagate between them. For state that needs to be visible across all states and threads, use the built-in `xll` library:
+
+```lua
+-- xll.set(key, value) — store a value (number, string, boolean, or nil to delete)
+xll.set("counter", (xll.get("counter") or 0) + 1)
+xll.set("status", "ready")
+
+-- xll.get(key) — retrieve a value (returns nil if not set)
+local count = xll.get("counter")
+```
+
+Access is serialized via a mutex on the Zig side — Lua execution stays parallel, only `xll.get`/`xll.set` calls block briefly. The store is shared across all pool states and persists for the lifetime of the add-in.
 
 ## Multiple scripts
 
-You can embed multiple Lua scripts. They all execute in the same global Lua state, so functions defined in one script are visible to others:
+You can embed multiple Lua scripts. They are all loaded into every pool state, so functions defined in one script are visible to others:
 
 ```zig
 pub const lua_scripts = .{
@@ -210,6 +292,6 @@ end
 ## Limitations
 
 - Maximum 8 parameters per function (same as `ExcelFunction`)
-- Always non-thread-safe (`thread_safe = true` is a compile error)
 - No matrix/table parameter or return type support yet
-- Lua functions share a single global state, so avoid global variable collisions across scripts
+- Pool states are independent — global variable mutations don't propagate between states (use `xll.get`/`xll.set` for shared state)
+- `async` and `thread_safe` cannot both be `true` on the same function (compile error)

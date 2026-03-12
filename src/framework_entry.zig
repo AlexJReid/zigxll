@@ -251,6 +251,12 @@ pub fn xlAutoClose() callconv(.c) c_int {
         lua.deinit();
     }
 
+    // Call user-defined cleanup if present
+    const root = @import("root");
+    if (comptime @hasDecl(root, "deinit")) {
+        root.deinit();
+    }
+
     initialized = false;
     return xl.xlretSuccess;
 }
