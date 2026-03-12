@@ -249,7 +249,7 @@ At compile time, `LuaFunction()` generates:
 2. An `@export` of the impl function (dots in names become underscores)
 3. Excel registration metadata (type string, descriptions)
 
-At runtime, the framework maintains a pool of independent Lua states (default 4, [configurable](#pool-size)), each loaded with identical scripts. When Excel calls the function:
+At runtime, the framework maintains a pool of independent Lua states (default 8, [configurable](#pool-size)), each loaded with identical scripts. When Excel calls the function:
 
 1. **Non-thread-safe**: locks the main state (slot 0)
 2. **Thread-safe**: acquires any free state from the pool via atomic CAS (no contention — each thread gets its own state)
@@ -307,7 +307,7 @@ pub const lua_stateful = LuaFunction(.{
 
 ## Pool size
 
-The number of Lua states defaults to 4. Override it in your `build.zig`:
+The number of Lua states defaults to 8. Override it in your `build.zig`:
 
 ```zig
 const xll = xll_build.buildXll(b, .{
@@ -316,17 +316,17 @@ const xll = xll_build.buildXll(b, .{
     .target = target,
     .optimize = optimize,
     .enable_lua = true,
-    .lua_states = 8,
+    .lua_states = 12,
 });
 ```
 
 Or from the command line when building the framework directly:
 
 ```bash
-zig build -Dlua_states=8
+zig build -Dlua_states=12
 ```
 
-A value of 0 (the default) uses 4 states. Each state is an independent Lua VM with its own globals and GC, so memory usage scales linearly.
+A value of 0 (the default) uses 8 states. Each state is an independent Lua VM with its own globals and GC, so memory usage scales linearly.
 
 ## Shared state
 
@@ -427,7 +427,7 @@ The example project includes a Black-Scholes implementation in Lua (`example/src
 
 The Lua functions `bs_call(S, K, T, r, sigma)` and `bs_put(S, K, T, r, sigma)` take five parameters: spot price, strike price, time to maturity in years, risk-free rate, and volatility. They are registered as both `Lua.BS_CALL` / `Lua.BS_PUT` (via Zig in `lua_functions.zig`) and `LuaFromJson.BS_CALL` / `LuaFromJson.BS_PUT` (via JSON in `lua_functions.json`).
 
-Performance: the Lua version runs 2,000 calculations (1,000 rows x call + put) in about 11ms, roughly double the native Zig implementation, but still absolutely acceptable for interactive Excel use.
+Performance: the Lua version is only 2-3ms slower than the native Zig implementation for 2,000 calculations (1,000 rows x call + put), absolutely acceptable for interactive Excel use.
 
 A test workbook `example/black_scholes_1000_rows_test_lua.xlsm` exercises these functions across 1,000 rows of randomized inputs. There is also a Zig-side counterpart workbook (`example/black_scholes_1000_rows_test.xlsm`) that tests the native `ExcelFunction` Black-Scholes.
 

@@ -68,10 +68,10 @@ pub fn lua_setglobal(L: *lua_State, name: [*:0]const u8) void {
 // Sync calls use slot 0 (the "main" state) under a mutex.
 // Async workers acquire any free slot via CAS.
 
-/// Pool size: configurable via build option `lua_states`, default 4.
+/// Pool size: configurable via build option `lua_states`, default 8.
 const pool_size = blk: {
     const opt = @import("build_options").lua_states;
-    break :blk if (opt > 0) opt else 4;
+    break :blk if (opt > 0) opt else 8;
 };
 
 const StateSlot = struct {
