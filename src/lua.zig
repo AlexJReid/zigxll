@@ -233,11 +233,11 @@ fn registerXllLib(L: *lua_State) void {
     c.lua_createtable(@ptrCast(L), 0, 2);
 
     // xll.get = luaXllGet
-    c.lua_pushcfunction(@ptrCast(L), luaXllGet);
+    c.lua_pushcclosure(@ptrCast(L), luaXllGet, 0);
     c.lua_setfield(@ptrCast(L), -2, "get");
 
     // xll.set = luaXllSet
-    c.lua_pushcfunction(@ptrCast(L), luaXllSet);
+    c.lua_pushcclosure(@ptrCast(L), luaXllSet, 0);
     c.lua_setfield(@ptrCast(L), -2, "set");
 
     c.lua_setglobal(@ptrCast(L), "xll");
