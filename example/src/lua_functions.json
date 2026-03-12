@@ -56,6 +56,32 @@
     ]
   },
   {
+    "name": "LuaFromJson.BS_CALL",
+    "lua_name": "bs_call",
+    "description": "Black-Scholes call option price (Lua)",
+    "category": "Lua Functions",
+    "params": [
+      { "name": "S", "description": "Current stock price" },
+      { "name": "K", "description": "Strike price" },
+      { "name": "T", "description": "Time to maturity (years)" },
+      { "name": "r", "description": "Risk-free rate" },
+      { "name": "sigma", "description": "Volatility" }
+    ]
+  },
+  {
+    "name": "LuaFromJson.BS_PUT",
+    "lua_name": "bs_put",
+    "description": "Black-Scholes put option price (Lua)",
+    "category": "Lua Functions",
+    "params": [
+      { "name": "S", "description": "Current stock price" },
+      { "name": "K", "description": "Strike price" },
+      { "name": "T", "description": "Time to maturity (years)" },
+      { "name": "r", "description": "Risk-free rate" },
+      { "name": "sigma", "description": "Volatility" }
+    ]
+  },
+  {
     "name": "LuaFromJson.IsPrime",
     "lua_name": "is_prime",
     "description": "Check if a number is prime (Lua, thread-safe)",

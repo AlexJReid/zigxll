@@ -65,6 +65,36 @@ pub const lua_fib = LuaFunction(.{
     },
 });
 
+// -- Black-Scholes ------------------------------------------------------------
+
+pub const lua_bs_call = LuaFunction(.{
+    .name = "Lua.BS_CALL",
+    .lua_name = "bs_call",
+    .description = "Black-Scholes call option price (Lua)",
+    .category = "Lua Functions",
+    .params = &[_]LuaParam{
+        .{ .name = "S", .description = "Current stock price" },
+        .{ .name = "K", .description = "Strike price" },
+        .{ .name = "T", .description = "Time to maturity (years)" },
+        .{ .name = "r", .description = "Risk-free rate" },
+        .{ .name = "sigma", .description = "Volatility" },
+    },
+});
+
+pub const lua_bs_put = LuaFunction(.{
+    .name = "Lua.BS_PUT",
+    .lua_name = "bs_put",
+    .description = "Black-Scholes put option price (Lua)",
+    .category = "Lua Functions",
+    .params = &[_]LuaParam{
+        .{ .name = "S", .description = "Current stock price" },
+        .{ .name = "K", .description = "Strike price" },
+        .{ .name = "T", .description = "Time to maturity (years)" },
+        .{ .name = "r", .description = "Risk-free rate" },
+        .{ .name = "sigma", .description = "Volatility" },
+    },
+});
+
 // -- Thread-safe Lua functions ------------------------------------------------
 // These run on Excel's multi-threaded calc engine. Each thread gets its own
 // Lua state from the pool, so there's no mutex contention.

@@ -398,6 +398,39 @@ function my_func(x)
 end
 ```
 
+## Generating JSON from Lua scripts
+
+If you already have Lua scripts and want to bootstrap a `functions.json`, the `tools/lua_introspect.lua` utility can introspect your scripts and emit a JSON skeleton:
+
+```bash
+lua tools/lua_introspect.lua src/lua/functions.lua > src/lua_functions.json
+```
+
+It uses `debug.getinfo` and `debug.getlocal` to extract function names and parameter names, converts `snake_case` to `PascalCase` for Excel names, and outputs JSON compatible with the `lua_json` build option.
+
+Options:
+
+```bash
+lua tools/lua_introspect.lua --prefix "MyAddin." --category "Finance" src/lua/*.lua
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--prefix` | `Lua.` | Prefix for Excel function names |
+| `--category` | `Lua Functions` | Category in Excel's function list |
+
+The generated JSON won't include `description`, `type`, or `async` fields — add those by hand after generation.
+
+## Example: Black-Scholes option pricing
+
+The example project includes a Black-Scholes implementation in Lua (`example/src/lua/functions.lua`) that prices European call and put options. It uses the Zelen & Severo polynomial approximation for the normal CDF, no external libraries needed.
+
+The Lua functions `bs_call(S, K, T, r, sigma)` and `bs_put(S, K, T, r, sigma)` take five parameters: spot price, strike price, time to maturity in years, risk-free rate, and volatility. They are registered as both `Lua.BS_CALL` / `Lua.BS_PUT` (via Zig in `lua_functions.zig`) and `LuaFromJson.BS_CALL` / `LuaFromJson.BS_PUT` (via JSON in `lua_functions.json`).
+
+Performance: the Lua version runs 2,000 calculations (1,000 rows x call + put) in about 11ms, roughly double the native Zig implementation, but still absolutely acceptable for interactive Excel use.
+
+A test workbook `example/black_scholes_1000_rows_test_lua.xlsm` exercises these functions across 1,000 rows of randomized inputs. There is also a Zig-side counterpart workbook (`example/black_scholes_1000_rows_test.xlsm`) that tests the native `ExcelFunction` Black-Scholes.
+
 ## Limitations
 
 - Maximum 8 parameters per function (same as `ExcelFunction`)

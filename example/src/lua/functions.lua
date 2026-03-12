@@ -53,6 +53,39 @@ function sum_range(lo, hi)
     return total
 end
 
+-- Black-Scholes option pricing
+-- Zelen & Severo approximation for normal CDF
+local function normal_cdf(x)
+    local b0 = 0.2316419
+    local b1 = 0.319381530
+    local b2 = -0.356563782
+    local b3 = 1.781477937
+    local b4 = -1.821255978
+    local b5 = 1.330274429
+
+    if x >= 0 then
+        local t = 1.0 / (1.0 + b0 * x)
+        local t2 = t * t
+        local t3 = t2 * t
+        local poly = b1 * t + b2 * t2 + b3 * t3 + b4 * t2 * t2 + b5 * t2 * t3
+        return 1.0 - poly * math.exp(-x * x / 2.0) / math.sqrt(2.0 * math.pi)
+    else
+        return 1.0 - normal_cdf(-x)
+    end
+end
+
+function bs_call(S, K, T, r, sigma)
+    local d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+    local d2 = d1 - sigma * math.sqrt(T)
+    return S * normal_cdf(d1) - K * math.exp(-r * T) * normal_cdf(d2)
+end
+
+function bs_put(S, K, T, r, sigma)
+    local d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+    local d2 = d1 - sigma * math.sqrt(T)
+    return K * math.exp(-r * T) * normal_cdf(-d2) - S * normal_cdf(-d1)
+end
+
 -- Async: runs on thread pool, simulates slow work
 function slow_fib(n)
     -- deliberate naive recursion to simulate expensive computation
