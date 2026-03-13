@@ -2,7 +2,7 @@
 
 A Zig framework for building Excel XLL add-ins including streaming data and Lua scripting support.
 
-[Template repo](https://github.com/AlexJReid/zigxll-standalone/) | [Example project](./example) | [NATS pub/sub connector](https://github.com/AlexJReid/zigxll-connectors-nat/)
+[Template repo](https://github.com/AlexJReid/zigxll-standalone/) | [Example project](./example) | [NATS pub/sub connector](https://github.com/AlexJReid/zigxll-connectors-nats/)
 
 ## Documentation
 
