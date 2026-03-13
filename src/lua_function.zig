@@ -43,10 +43,11 @@ fn sanitizeExportName(comptime len: usize, comptime input: *const [len]u8) *cons
 
 pub fn LuaFunction(comptime meta: anytype) type {
     const name = meta.name;
-    const lua_name_slice: []const u8 = if (@hasField(@TypeOf(meta), "lua_name")) meta.lua_name else name;
-    const lua_name: [:0]const u8 = lua_name_slice[0..lua_name_slice.len :0];
+    const id_slice: []const u8 = if (@hasField(@TypeOf(meta), "id")) meta.id else name;
+    const lua_name: [:0]const u8 = id_slice[0..id_slice.len :0];
     const description: []const u8 = if (@hasField(@TypeOf(meta), "description")) meta.description else "";
     const category: []const u8 = if (@hasField(@TypeOf(meta), "category")) meta.category else "Lua";
+    const help_url: ?[]const u8 = if (@hasField(@TypeOf(meta), "help_url")) meta.help_url else null;
     const lua_params: []const LuaParam = if (@hasField(@TypeOf(meta), "params")) meta.params else &.{};
     const is_async = if (@hasField(@TypeOf(meta), "is_async")) meta.is_async else if (@hasField(@TypeOf(meta), "async")) meta.@"async" else false;
     const thread_safe = if (is_async) false else if (@hasField(@TypeOf(meta), "thread_safe")) meta.thread_safe else true;
@@ -85,6 +86,7 @@ pub fn LuaFunction(comptime meta: anytype) type {
         pub const excel_name = name;
         pub const excel_description = description;
         pub const excel_category = category;
+        pub const excel_help_url = help_url;
         pub const excel_params = &params_meta;
         pub const excel_param_count = param_count;
         pub const excel_type_string = type_string;

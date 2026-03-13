@@ -53,6 +53,9 @@ jobs:
         path: zig-out/lib/output.xll
         if-no-files-found: error
 
+    - name: Install Lua
+      run: choco install lua -y
+
     - name: Build example XLL
       working-directory: example
       run: zig build --release=fast

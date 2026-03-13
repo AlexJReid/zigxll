@@ -112,6 +112,12 @@ pub fn buildXll(
         enable_lua: bool = false,
         lua_states: u32 = 0,
         lua_json: ?std.Build.LazyPath = null,
+        /// Lua script files to embed and generate Excel function declarations from.
+        /// The framework runs lua_introspect.lua on these files and generates a Zig module
+        /// with LuaFunction declarations and embedded script sources.
+        lua_scripts: []const []const u8 = &.{},
+        lua_prefix: []const u8 = "Lua.",
+        lua_category: []const u8 = "Lua Functions",
     },
 ) *std.Build.Step.Compile {
     const target = options.target;
@@ -174,6 +180,38 @@ pub fn buildXll(
         });
         lua_json_module.addImport("xll", xll_framework);
         xll.root_module.addImport("lua_json_module", lua_json_module);
+    }
+
+    // Generate Lua function declarations from annotated .lua scripts, or provide empty stub
+    {
+        const gen_source: std.Build.LazyPath = if (options.lua_scripts.len > 0) blk: {
+            const lua_gen = b.addSystemCommand(&.{
+                "lua",
+                xll_dep.path("tools/lua_introspect.lua").getPath(b),
+            });
+            lua_gen.setCwd(b.path("."));
+            lua_gen.addArgs(&.{ "--prefix", options.lua_prefix, "--category", options.lua_category, "--embed-root", "src" });
+            for (options.lua_scripts) |script| lua_gen.addArg(script);
+            const lua_generated = lua_gen.captureStdOut();
+
+            // Write generated file to user's source tree (for IDE support and @embedFile resolution)
+            const update_src = b.addUpdateSourceFiles();
+            update_src.addCopyFileToSource(lua_generated, "src/lua_generated.zig");
+            xll.step.dependOn(&update_src.step);
+
+            // Use the source-tree copy as module root so @embedFile resolves relative to src/
+            break :blk b.path("src/lua_generated.zig");
+        } else blk: {
+            const wf = b.addWriteFiles();
+            break :blk wf.add("lua_scripts_gen.zig", "// No Lua scripts configured\n");
+        };
+        const lua_scripts_mod = b.createModule(.{
+            .root_source_file = gen_source,
+            .target = target,
+            .optimize = optimize,
+        });
+        lua_scripts_mod.addImport("xll", xll_framework);
+        xll.root_module.addImport("lua_scripts_module", lua_scripts_mod);
     }
 
     // Add Excel SDK from xll dependency

@@ -8,7 +8,7 @@ const std = @import("std");
 pub const LuaJsonError = error{
     ParseFailed,
     MissingName,
-    MissingLuaName,
+    MissingId,
     TooManyParams,
     InvalidParamType,
 };
@@ -53,24 +53,26 @@ pub fn generate(allocator: std.mem.Allocator, json_bytes: []const u8) ![]const u
         };
 
         const name = getStr(func, "name") orelse return LuaJsonError.MissingName;
-        const lua_name = getStr(func, "lua_name") orelse return LuaJsonError.MissingLuaName;
+        const id = getStr(func, "id") orelse return LuaJsonError.MissingId;
         const description = getStr(func, "description");
         const category = getStr(func, "category");
+        const help_url = getStr(func, "help_url");
         const is_async = getBool(func, "async") orelse false;
 
-        // Derive a valid Zig identifier from the lua_name
+        // Derive a valid Zig identifier from the id
         try w.writeAll("pub const ");
-        try writeIdentifier(w, lua_name);
+        try writeIdentifier(w, id);
         try w.writeAll(" = LuaFunction(.{\n");
 
         try w.print("    .name = \"{s}\",\n", .{name});
-        try w.print("    .lua_name = \"{s}\",\n", .{lua_name});
+        try w.print("    .id = \"{s}\",\n", .{id});
         if (description) |d| try w.print("    .description = \"{s}\",\n", .{d});
         if (category) |c| try w.print("    .category = \"{s}\",\n", .{c});
+        if (help_url) |u| try w.print("    .help_url = \"{s}\",\n", .{u});
         if (is_async) try w.writeAll("    .is_async = true,\n");
 
-        // Params
-        const params_val = func.get("params");
+        // Parameters
+        const params_val = func.get("parameters");
         if (params_val) |pv| {
             const params = switch (pv) {
                 .array => |arr| arr.items,
@@ -146,19 +148,19 @@ test "generate basic functions" {
         \\[
         \\  {
         \\    "name": "Lua.Add",
-        \\    "lua_name": "add",
+        \\    "id": "add",
         \\    "description": "Add two numbers",
         \\    "category": "Math",
-        \\    "params": [
+        \\    "parameters": [
         \\      { "name": "x", "description": "First number" },
         \\      { "name": "y", "description": "Second number" }
         \\    ]
         \\  },
         \\  {
         \\    "name": "Lua.Greet",
-        \\    "lua_name": "greet",
+        \\    "id": "greet",
         \\    "description": "Greet someone",
-        \\    "params": [
+        \\    "parameters": [
         \\      { "name": "name", "type": "string", "description": "Name to greet" }
         \\    ]
         \\  }
@@ -179,9 +181,9 @@ test "generate async function" {
         \\{ "functions": [
         \\  {
         \\    "name": "Lua.Slow",
-        \\    "lua_name": "slow_calc",
+        \\    "id": "slow_calc",
         \\    "async": true,
-        \\    "params": [{ "name": "x" }]
+        \\    "parameters": [{ "name": "x" }]
         \\  }
         \\]}
     ;
@@ -195,7 +197,7 @@ test "generate async function" {
 
 test "generate no params" {
     const json =
-        \\[{ "name": "Lua.Pi", "lua_name": "pi" }]
+        \\[{ "name": "Lua.Pi", "id": "pi" }]
     ;
 
     const src = try generate(std.testing.allocator, json);
@@ -206,9 +208,20 @@ test "generate no params" {
     try std.testing.expect(std.mem.indexOf(u8, src, ".params") == null);
 }
 
+test "generate help_url" {
+    const json =
+        \\[{ "name": "Lua.Add", "id": "add", "help_url": "https://example.com/help" }]
+    ;
+
+    const src = try generate(std.testing.allocator, json);
+    defer std.testing.allocator.free(src);
+
+    try std.testing.expect(std.mem.indexOf(u8, src, ".help_url = \"https://example.com/help\"") != null);
+}
+
 test "reject invalid param type" {
     const json =
-        \\[{ "name": "F", "lua_name": "f", "params": [{ "name": "x", "type": "matrix" }] }]
+        \\[{ "name": "F", "id": "f", "parameters": [{ "name": "x", "type": "matrix" }] }]
     ;
 
     const result = generate(std.testing.allocator, json);
@@ -217,7 +230,7 @@ test "reject invalid param type" {
 
 test "reject too many params" {
     const json =
-        \\[{ "name": "F", "lua_name": "f", "params": [
+        \\[{ "name": "F", "id": "f", "parameters": [
         \\  {"name":"a"},{"name":"b"},{"name":"c"},{"name":"d"},
         \\  {"name":"e"},{"name":"f"},{"name":"g"},{"name":"h"},{"name":"i"}
         \\]}]

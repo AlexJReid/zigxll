@@ -10,3 +10,4 @@ output.xll
 .DS_Store
 .xwin-cache
 CLAUDE.md
+example/src/lua_generated.zig

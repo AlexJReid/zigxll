@@ -39,6 +39,13 @@ pub fn getAllFunctions() []const type {
         funcs = funcs ++ json_funcs;
     }
 
+    // Include functions generated from lua_scripts if present
+    if (@hasDecl(root, "lua_scripts_functions")) {
+        const lua_scripts_mod = root.lua_scripts_functions;
+        const scripts_funcs = function_discovery.getAllFunctions(lua_scripts_mod);
+        funcs = funcs ++ scripts_funcs;
+    }
+
     return funcs;
 }
 
@@ -99,22 +106,36 @@ pub fn xlAutoOpen() callconv(.c) c_int {
         xl_helpers.debugLogFmt("Successfully registered {d} macros", .{all_macros.len});
     }
 
-    // Initialize Lua and load scripts if user module declares them
+    // Initialize Lua and load scripts from user module or lua_scripts_module
     const user_mod = @import("root").user_functions;
-    if (comptime @hasDecl(user_mod, "lua_scripts")) {
+    const has_user_lua_scripts = comptime @hasDecl(user_mod, "lua_scripts");
+    const root_mod = @import("root");
+    const has_framework_lua_scripts = comptime @hasDecl(root_mod, "lua_scripts_functions") and @hasDecl(root_mod.lua_scripts_functions, "lua_scripts");
+    if (comptime has_user_lua_scripts or has_framework_lua_scripts) {
         const lua = @import("lua.zig");
         lua.init() catch {
             xl_helpers.debugLog("Failed to initialize Lua");
             return xl.xlretFailed;
         };
         xl_helpers.debugLogFmt("Lua: initialized {d} state(s)", .{lua.getPoolSize()});
-        inline for (user_mod.lua_scripts) |script| {
-            lua.loadScript(script.source, script.name) catch {
-                xl_helpers.debugLogFmt("Failed to load Lua script: {s}", .{script.name});
-                return xl.xlretFailed;
-            };
+        if (comptime has_user_lua_scripts) {
+            inline for (user_mod.lua_scripts) |script| {
+                lua.loadScript(script.source, script.name) catch {
+                    xl_helpers.debugLogFmt("Failed to load Lua script: {s}", .{script.name});
+                    return xl.xlretFailed;
+                };
+            }
+            xl_helpers.debugLogFmt("Loaded {d} Lua scripts (user)", .{user_mod.lua_scripts.len});
         }
-        xl_helpers.debugLogFmt("Loaded {d} Lua scripts", .{user_mod.lua_scripts.len});
+        if (comptime has_framework_lua_scripts) {
+            inline for (root_mod.lua_scripts_functions.lua_scripts) |script| {
+                lua.loadScript(script.source, script.name) catch {
+                    xl_helpers.debugLogFmt("Failed to load Lua script: {s}", .{script.name});
+                    return xl.xlretFailed;
+                };
+            }
+            xl_helpers.debugLogFmt("Loaded {d} Lua scripts (build)", .{root_mod.lua_scripts_functions.lua_scripts.len});
+        }
     }
 
     // Auto-register RTD servers if user module declares them
@@ -254,10 +275,15 @@ pub fn xlAutoClose() callconv(.c) c_int {
     xl_helpers.debugLog("xlAutoClose called");
 
     // Clean up Lua state if it was initialized
-    const user_mod = @import("root").user_functions;
-    if (comptime @hasDecl(user_mod, "lua_scripts")) {
-        const lua = @import("lua.zig");
-        lua.deinit();
+    {
+        const um = @import("root").user_functions;
+        const rm = @import("root");
+        const has_lua = comptime @hasDecl(um, "lua_scripts") or
+            (@hasDecl(rm, "lua_scripts_functions") and @hasDecl(rm.lua_scripts_functions, "lua_scripts"));
+        if (has_lua) {
+            const lua = @import("lua.zig");
+            lua.deinit();
+        }
     }
 
     // Call user-defined cleanup if present

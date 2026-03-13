@@ -11,7 +11,6 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-
     // Build the XLL using the framework's helper
     // The helper will wire up the xll import for the user module
     const xll_build = @import("xll");
@@ -21,7 +20,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .enable_lua = true,
-        .lua_json = b.path("src/lua_functions.json"),
+        .lua_scripts = &.{"src/lua/functions.lua"},
     });
     // Install the XLL (rename .dll to .xll)
     const install_xll = b.addInstallFile(xll.getEmittedBin(), "lib/my_excel_functions.xll");
