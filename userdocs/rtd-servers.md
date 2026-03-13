@@ -1,3 +1,8 @@
+---
+layout: default
+title: RTD Servers
+---
+
 # RTD Servers
 
 ZigXLL includes a reusable RTD (Real-Time Data) server framework, letting you push live data into Excel from Zig with no C++ or ATL required.

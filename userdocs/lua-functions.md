@@ -1,3 +1,8 @@
+---
+layout: default
+title: Lua Functions
+---
+
 # Lua Functions
 
 ZigXLL can embed Lua scripts in your XLL, letting you write Excel functions in Lua instead of Zig. The framework handles all marshaling between Excel and Lua at compile time, with no runtime registry or stub pools needed. Lua functions support async execution and thread-safe parallel recalculation.

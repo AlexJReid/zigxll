@@ -1,3 +1,8 @@
+---
+layout: default
+title: How ZigXLL Works
+---
+
 # How ZigXLL Works
 
 Some technical rambling about how this all works.

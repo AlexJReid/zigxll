@@ -1,3 +1,8 @@
+---
+layout: default
+title: Creating Excel Functions
+---
+
 # Creating Excel Functions
 
 ## Quick start
@@ -171,7 +176,7 @@ fn livePriceImpl(symbol: []const u8) !*xl.XLOPER12 {
 }
 ```
 
-Functions that call `rtd_call.subscribe()` must set `.thread_safe = false` — `xlfRtd` must run on Excel's main thread. See [rtd-servers.md](./rtd-servers.md) for more on RTD.
+Functions that call `rtd_call.subscribe()` must set `.thread_safe = false` — `xlfRtd` must run on Excel's main thread. See [RTD servers](rtd-servers) for more on RTD.
 
 ## Multiple modules
 
