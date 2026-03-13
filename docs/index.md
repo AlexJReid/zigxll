@@ -178,8 +178,20 @@ The [example project](https://github.com/AlexJReid/zigxll/tree/main/example) inc
 | `ZigXLL.SLOW_DOUBLE(x)` | Async doubled number (simulates slow computation) |
 | `ZigXLL.MONTE_CARLO(batches, samples)` | Estimate pi via Monte Carlo with live progress |
 
+## Alternatives
+
+Using Zig for XLL development is a niche within a niche. Here are some alternatives to benchmark ZigXLL against to see which best fits your needs:
+
+- **[xladd](https://github.com/MarcusRainbow/xladd)** (Rust) - Rust wrapper around the Excel C API. Proc macros generate registration boilerplate. Similar philosophy to ZigXLL but with Rust's ecosystem and crate support. See also [xladd-derive](https://github.com/ronniec95/xladd-derive).
+- **[Excel-DNA](https://excel-dna.net/)** (.NET) - The most mature option. Write UDFs in C#, VB.NET, or F#, pack everything into a single .xll. Huge community, great docs, production-proven. If you're already in the .NET ecosystem, start here.
+- **[PyXLL](https://www.pyxll.com/)** (Python) - Commercial. Runs Python inside Excel with full access to NumPy, Pandas, etc. Decorate functions to expose them as UDFs. Great if your logic is already in Python. Windows only.
+- **[xlwings](https://www.xlwings.org/)** (Python) - Open-source core (BSD), commercial PRO and Server tiers. Call Python from Excel and vice versa. UDFs on Windows, automation on both Windows and Mac. Also supports Google Sheets and Excel on the web.
+
+Honourable mention: **[xllify](https://xllify.com)** is not quite the same thing - it's a platform I built on ZigXLL that lets you create Excel function add-ins for Windows, Mac, and the web without writing Zig (or any code). Describe your functions in plain English or paste existing VBA, and it generates the add-in for you.
+
 ## Projects using ZigXLL
 
+- [xllify](https://xllify.com) -- Platform for building custom Excel function add-ins for Windows, Mac, and the web
 - [zigxll-nats](https://github.com/AlexJReid/zigxll-nats) -- Stream NATS messages into Excel as live data
 
 ## Commercial
