@@ -19,10 +19,11 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Install Lua 5.4
+      shell: cmd
       run: |
         7z x tools\lua-5.4.2_Win32_bin.zip -oC:\lua54
         copy C:\lua54\lua54.exe C:\lua54\lua.exe
-        echo C:\lua54>> %GITHUB_PATH%
+        echo C:\lua54>> "%GITHUB_PATH%"
 
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
