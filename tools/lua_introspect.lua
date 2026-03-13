@@ -6,9 +6,10 @@
 -- Emits a .zig file with LuaFunction declarations + lua_scripts to stdout.
 --
 -- Options:
---   --prefix PREFIX      Excel function name prefix (default: "Lua.")
---   --category CAT       Default category (default: "Lua Functions")
---   --embed-root DIR     Base directory for @embedFile paths
+--   --prefix PREFIX            Excel function name prefix (default: "Lua.")
+--   --category CAT             Default category (default: "Lua Functions")
+--   --embed-root DIR           Base directory for @embedFile paths
+--   --functions-json FILE      Also write Office JS functions.json to FILE
 --
 -- Annotation format (above each global function):
 --
@@ -16,6 +17,7 @@
 --   -- @param x number First number
 --   -- @param y string Name to greet
 --   -- @async
+--   -- @thread_safe false
 --   -- @category My Category
 --   -- @name CustomExcelName
 --   -- @help_url https://example.com/help
@@ -26,9 +28,10 @@ local function usage()
 Usage: lua tools/lua_introspect.lua [options] <script.lua> [...]
 
 Options:
-  --prefix PREFIX      Excel name prefix (default: "Lua.")
-  --category CAT       Default category (default: "Lua Functions")
-  --embed-root DIR     Base directory for @embedFile paths
+  --prefix PREFIX            Excel name prefix (default: "Lua.")
+  --category CAT             Default category (default: "Lua Functions")
+  --embed-root DIR           Base directory for @embedFile paths
+  --functions-json FILE      Also write Office JS functions.json to FILE
 
 Parses LDoc-style --- annotations and emits a .zig file with
 LuaFunction declarations and a lua_scripts constant.
@@ -40,6 +43,7 @@ end
 local prefix = "Lua."
 local default_category = "Lua Functions"
 local embed_root = nil
+local functions_json_path = nil
 local files = {}
 
 local i = 1
@@ -54,6 +58,9 @@ while i <= #arg do
     elseif a == "--embed-root" then
         i = i + 1
         embed_root = arg[i] or usage()
+    elseif a == "--functions-json" then
+        i = i + 1
+        functions_json_path = arg[i] or usage()
     elseif a == "--help" or a == "-h" then
         usage()
     elseif a:sub(1, 1) == "-" then
@@ -116,6 +123,7 @@ local function parse_file(path)
                     description = nil,
                     params = {},
                     is_async = false,
+                    thread_safe = nil,
                     category = nil,
                     help_url = nil,
                     excel_name = nil,
@@ -147,6 +155,9 @@ local function parse_file(path)
                     }
                 elseif tag_line:match("^@async") then
                     doc.is_async = true
+                elseif tag_line:match("^@thread_safe%s+") then
+                    local val = tag_line:match("^@thread_safe%s+(%S+)")
+                    doc.thread_safe = (val ~= "false")
                 elseif tag_line:match("^@category%s+") then
                     doc.category = tag_line:match("^@category%s+(.*)")
                 elseif tag_line:match("^@name%s+") then
@@ -207,6 +218,9 @@ for _, func in ipairs(all_functions) do
     if func.is_async then
         out[#out + 1] = "    .is_async = true,"
     end
+    if func.thread_safe ~= nil then
+        out[#out + 1] = "    .thread_safe = " .. (func.thread_safe and "true" or "false") .. ","
+    end
 
     if #func.params > 0 then
         out[#out + 1] = "    .params = &[_]LuaParam{"
@@ -239,3 +253,90 @@ out[#out + 1] = "};"
 out[#out + 1] = ""
 
 io.write(table.concat(out, "\n") .. "\n")
+
+-- Emit Office JS functions.json
+if functions_json_path then
+    local function json_escape(s)
+        return s:gsub('\\', '\\\\'):gsub('"', '\\"'):gsub('\n', '\\n'):gsub('\r', '\\r'):gsub('\t', '\\t')
+    end
+
+    local function json_string(s)
+        return '"' .. json_escape(s) .. '"'
+    end
+
+    local type_map = { number = "number", string = "string", boolean = "boolean" }
+
+    local j = {}
+    j[#j + 1] = '{'
+    j[#j + 1] = '  "$schema": "https://developer.microsoft.com/en-us/json-schemas/office-js/custom-functions.schema.json",'
+    j[#j + 1] = '  "functions": ['
+
+    for fi, func in ipairs(all_functions) do
+        local excel_name = func.excel_name or (prefix .. pascal_case(func.id))
+        -- Office JS uses uppercase names by convention
+        local display_name = excel_name:gsub("%.", ".")
+
+        j[#j + 1] = '    {'
+        j[#j + 1] = '      "id": ' .. json_string(func.id) .. ','
+        j[#j + 1] = '      "name": ' .. json_string(display_name) .. ','
+        if func.description then
+            j[#j + 1] = '      "description": ' .. json_string(func.description) .. ','
+        end
+        if func.help_url then
+            j[#j + 1] = '      "helpUrl": ' .. json_string(func.help_url) .. ','
+        end
+
+        -- result
+        j[#j + 1] = '      "result": {'
+        j[#j + 1] = '        "dimensionality": "scalar"'
+        j[#j + 1] = '      },'
+
+        -- parameters
+        j[#j + 1] = '      "parameters": ['
+        for pi, p in ipairs(func.params) do
+            j[#j + 1] = '        {'
+            j[#j + 1] = '          "name": ' .. json_string(p.name) .. ','
+            if p.description then
+                j[#j + 1] = '          "description": ' .. json_string(p.description) .. ','
+            end
+            j[#j + 1] = '          "type": ' .. json_string(type_map[p.type] or "any") .. ','
+            j[#j + 1] = '          "dimensionality": "scalar"'
+            j[#j + 1] = '        }' .. (pi < #func.params and ',' or '')
+        end
+        j[#j + 1] = '      ]'
+
+        -- async / thread_safe
+        local is_async = func.is_async
+        -- match Zig logic: async forces thread_safe=false, otherwise default true
+        local thread_safe
+        if is_async then
+            thread_safe = false
+        elseif func.thread_safe ~= nil then
+            thread_safe = func.thread_safe
+        else
+            thread_safe = true
+        end
+        if is_async or not thread_safe then
+            j[#j] = '      ],'
+            if is_async then
+                j[#j + 1] = '      "async": true,'
+            end
+            j[#j + 1] = '      "threadSafe": ' .. (thread_safe and 'true' or 'false')
+        end
+
+        j[#j + 1] = '    }' .. (fi < #all_functions and ',' or '')
+    end
+
+    j[#j + 1] = '  ]'
+    j[#j + 1] = '}'
+    j[#j + 1] = ''
+
+    local fh, err = io.open(functions_json_path, "w")
+    if not fh then
+        io.stderr:write("Error writing " .. functions_json_path .. ": " .. err .. "\n")
+        os.exit(1)
+    end
+    fh:write(table.concat(j, "\n"))
+    fh:close()
+    io.stderr:write("Wrote " .. functions_json_path .. "\n")
+end

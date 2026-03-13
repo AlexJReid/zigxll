@@ -91,6 +91,7 @@ local function normal_cdf(x)
 end
 
 --- Black-Scholes call option price
+-- @name Lua.BS_CALL
 -- @param S number Current stock price
 -- @param K number Strike price
 -- @param T number Time to maturity (years)
@@ -103,6 +104,7 @@ function bs_call(S, K, T, r, sigma)
 end
 
 --- Black-Scholes put option price
+-- @name Lua.BS_PUT
 -- @param S number Current stock price
 -- @param K number Strike price
 -- @param T number Time to maturity (years)

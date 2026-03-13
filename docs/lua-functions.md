@@ -76,6 +76,7 @@ Annotate Lua functions with `---` doc comments directly above the `function` dec
 -- @param x number First number
 -- @param y string Name to greet
 -- @async
+-- @thread_safe false
 -- @category My Category
 -- @name CustomExcelName
 -- @help_url https://example.com/help
@@ -87,6 +88,7 @@ function my_func(x, y) ... end
 | `---` line | Function description (first `---` line) |
 | `@param name [type] [description]` | Parameter. Type is `number` (default), `string`, or `boolean`. |
 | `@async` | Run on worker thread with result caching via RTD |
+| `@thread_safe false` | Disable multi-threaded recalculation (default: thread-safe) |
 | `@category name` | Excel function category (default: `"Lua Functions"`) |
 | `@name ExcelName` | Override the auto-generated Excel name |
 | `@help_url url` | URL with help information |
@@ -112,6 +114,16 @@ const xll = xll_build.buildXll(b, .{
 | `lua_scripts` | `&.{}` | Lua script files to embed and generate declarations from |
 | `lua_prefix` | `"Lua."` | Prefix for auto-generated Excel function names |
 | `lua_category` | `"Lua Functions"` | Default category in Excel's function list |
+
+## Generating functions.json
+
+The `lua_introspect.lua` tool can also generate an Office JS-compatible `functions.json` for use with Excel web add-ins. Pass `--functions-json` with an output path:
+
+```bash
+lua tools/lua_introspect.lua --functions-json functions.json src/lua/*.lua
+```
+
+This produces a JSON file with the `$schema`, function metadata, parameter types, and `async`/`threadSafe` flags derived from the same `---` annotations used for the XLL build.
 
 ## LuaFunction options
 
@@ -202,7 +214,7 @@ This uses the same async infrastructure as Zig `ExcelFunction(.{ .is_async = tru
 
 Lua functions are **thread-safe by default** — Excel can call them from multiple threads during parallel recalculation. Each thread acquires its own Lua state from the pool, so there is no contention.
 
-If your Lua function relies on global state that must be consistent across calls, write the `LuaFunction` by hand with `.thread_safe = false` (annotations default to thread-safe and there is no annotation tag for this).
+If your Lua function relies on global state that must be consistent across calls, add `@thread_safe false` to the annotation (or `.thread_safe = false` in hand-written Zig).
 
 **Important**: since each pool state is independent, global variables set by one call may not be visible to the next (which may run on a different state). Don't rely on global mutation across calls. Use `xll.get`/`xll.set` for [shared state](#shared-state).
 
