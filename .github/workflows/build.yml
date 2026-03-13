@@ -18,6 +18,12 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
+    - name: Install Lua 5.4
+      run: |
+        7z x tools\lua-5.4.2_Win32_bin.zip -oC:\lua54
+        copy C:\lua54\lua54.exe C:\lua54\lua.exe
+        echo C:\lua54>> %GITHUB_PATH%
+
     - name: Setup MSVC
       uses: ilammy/msvc-dev-cmd@v1
       with:
@@ -52,15 +58,6 @@ jobs:
         name: zigxll-framework
         path: zig-out/lib/output.xll
         if-no-files-found: error
-
-    - name: Install Lua 5.4
-      shell: pwsh
-      run: |
-        Invoke-WebRequest -Uri "https://sourceforge.net/projects/luabinaries/files/5.4.7/Tools/lua-5.4.7_Win64_bin.zip/download" -OutFile lua.zip -UseBasicParsing
-        Expand-Archive lua.zip -DestinationPath C:\lua54
-        # LuaBinaries names the binary lua54.exe — create lua.exe alias
-        Copy-Item C:\lua54\lua54.exe C:\lua54\lua.exe
-        echo "C:\lua54" | Out-File -Append -FilePath $env:GITHUB_PATH -Encoding utf8
 
     - name: Build example XLL
       working-directory: example
