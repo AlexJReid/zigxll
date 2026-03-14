@@ -116,6 +116,8 @@ pub fn buildXll(
         /// The framework runs lua_introspect.lua on these files and generates a Zig module
         /// with LuaFunction declarations and embedded script sources.
         lua_scripts: []const []const u8 = &.{},
+        /// Directory to scan for .lua files (alternative to listing them individually).
+        lua_scripts_dir: ?[]const u8 = null,
         lua_prefix: []const u8 = "Lua.",
         lua_category: []const u8 = "Lua Functions",
     },
@@ -184,14 +186,30 @@ pub fn buildXll(
 
     // Generate Lua function declarations from annotated .lua scripts, or provide empty stub
     {
-        const gen_source: std.Build.LazyPath = if (options.lua_scripts.len > 0) blk: {
+        // Collect scripts from both explicit list and directory scan
+        var all_scripts: std.ArrayListUnmanaged([]const u8) = .empty;
+        for (options.lua_scripts) |s| all_scripts.append(b.allocator, s) catch @panic("OOM");
+        if (options.lua_scripts_dir) |dir_path| {
+            var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch
+                @panic("cannot open lua_scripts_dir");
+            defer dir.close();
+            var it = dir.iterate();
+            while (it.next() catch @panic("lua_scripts_dir iterate failed")) |entry| {
+                if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".lua")) {
+                    const full = std.fs.path.join(b.allocator, &.{ dir_path, entry.name }) catch @panic("OOM");
+                    all_scripts.append(b.allocator, full) catch @panic("OOM");
+                }
+            }
+        }
+
+        const gen_source: std.Build.LazyPath = if (all_scripts.items.len > 0) blk: {
             const lua_gen = b.addSystemCommand(&.{
                 "lua",
                 xll_dep.path("tools/lua_introspect.lua").getPath(b),
             });
             lua_gen.setCwd(b.path("."));
             lua_gen.addArgs(&.{ "--prefix", options.lua_prefix, "--category", options.lua_category, "--embed-root", "src" });
-            for (options.lua_scripts) |script| lua_gen.addArg(script);
+            for (all_scripts.items) |script| lua_gen.addArg(script);
             const lua_generated = lua_gen.captureStdOut();
 
             // Write generated file to user's source tree (for IDE support and @embedFile resolution)
