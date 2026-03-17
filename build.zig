@@ -118,7 +118,7 @@ pub fn buildXll(
         lua_scripts: []const []const u8 = &.{},
         /// Directory to scan for .lua files (alternative to listing them individually).
         lua_scripts_dir: ?[]const u8 = null,
-        lua_prefix: []const u8 = "Lua.",
+        lua_prefix: []const u8 = "FUNCS.",
         lua_category: []const u8 = "Lua Functions",
     },
 ) *std.Build.Step.Compile {
@@ -130,6 +130,10 @@ pub fn buildXll(
     build_options.addOption([]const u8, "xll_name", options.name);
     build_options.addOption([]const u8, "framework_version", @import("build.zig.zon").version);
     build_options.addOption(u32, "lua_states", options.lua_states);
+
+    // Allow overriding lua_prefix and lua_category from command line (-Dlua_prefix=MyLib.)
+    const lua_prefix = b.option([]const u8, "lua_prefix", "Prefix for auto-generated Lua function names (default: \"FUNCS.\")") orelse options.lua_prefix;
+    const lua_category = b.option([]const u8, "lua_category", "Category for Lua functions (default: \"Lua Functions\")") orelse options.lua_category;
 
     // Get xll dependency
     const xll_dep = b.dependency("xll", .{});
@@ -208,7 +212,7 @@ pub fn buildXll(
                 xll_dep.path("tools/lua_introspect.lua").getPath(b),
             });
             lua_gen.setCwd(b.path("."));
-            lua_gen.addArgs(&.{ "--prefix", options.lua_prefix, "--category", options.lua_category, "--embed-root", "src" });
+            lua_gen.addArgs(&.{ "--prefix", lua_prefix, "--category", lua_category, "--embed-root", "src" });
             for (all_scripts.items) |script| lua_gen.addArg(script);
             const lua_generated = lua_gen.captureStdOut();
 

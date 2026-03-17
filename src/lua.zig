@@ -243,12 +243,13 @@ fn registerXllLib(L: *lua_State) void {
     c.lua_setglobal(@ptrCast(L), "xll");
 }
 
-/// Create and initialize a single Lua state with libs + sandbox + xll store.
+/// Create and initialize a single Lua state with libs + sandbox + xll store + xllify builtins.
 fn createState() !*lua_State {
     const L = c.luaL_newstate() orelse return error.LuaInitFailed;
     c.luaL_openlibs(L);
     sandbox(L);
     registerXllLib(L);
+    @import("lua_builtins.zig").register(L);
     return L;
 }
 

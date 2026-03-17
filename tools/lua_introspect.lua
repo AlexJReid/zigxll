@@ -6,7 +6,7 @@
 -- Emits a .zig file with LuaFunction declarations + lua_scripts to stdout.
 --
 -- Options:
---   --prefix PREFIX            Excel function name prefix (default: "Lua.")
+--   --prefix PREFIX            Excel function name prefix (default: "FUNCS.")
 --   --category CAT             Default category (default: "Lua Functions")
 --   --embed-root DIR           Base directory for @embedFile paths
 --   --functions-json FILE      Also write Office JS functions.json to FILE
@@ -28,7 +28,7 @@ local function usage()
 Usage: lua tools/lua_introspect.lua [options] <script.lua> [...]
 
 Options:
-  --prefix PREFIX            Excel name prefix (default: "Lua.")
+  --prefix PREFIX            Excel name prefix (default: "FUNCS.")
   --category CAT             Default category (default: "Lua Functions")
   --embed-root DIR           Base directory for @embedFile paths
   --functions-json FILE      Also write Office JS functions.json to FILE
@@ -40,7 +40,7 @@ LuaFunction declarations and a lua_scripts constant.
 end
 
 -- Parse args
-local prefix = "Lua."
+local prefix = "FUNCS."
 local default_category = "Lua Functions"
 local embed_root = nil
 local functions_json_path = nil
