@@ -8,11 +8,7 @@
 //   xllify.regex_replace(text, pattern, replacement) -> string
 
 const std = @import("std");
-const c = @cImport({
-    @cInclude("lua.h");
-    @cInclude("lauxlib.h");
-    @cInclude("lualib.h");
-});
+const c = @import("lua_c.zig").c;
 
 const allocator = std.heap.c_allocator;
 
@@ -80,10 +76,10 @@ fn pushJsonValue(L: *c.lua_State, value: std.json.Value) void {
 /// xllify.json_stringify(value) -> string
 fn luaJsonStringify(L: ?*c.lua_State) callconv(.c) c_int {
     const state = L orelse return 0;
-    var buf = std.ArrayList(u8).init(allocator);
-    defer buf.deinit();
+    var buf: std.ArrayList(u8) = .{};
+    defer buf.deinit(allocator);
 
-    luaValueToJson(state, 1, buf.writer(), 0) catch {
+    luaValueToJson(state, 1, buf.writer(allocator), 0) catch {
         _ = c.lua_pushlstring(state, "null", 4);
         return 1;
     };
@@ -155,7 +151,10 @@ fn luaValueToJson(L: *c.lua_State, idx: c_int, writer: anytype, depth: u32) !voi
                         if (!first) try writer.writeByte(',');
                         first = false;
                         var klen: usize = 0;
-                        const kptr = c.lua_tolstring(L, -2, &klen) orelse "";
+                        const kptr = c.lua_tolstring(L, -2, &klen) orelse {
+                            c.lua_settop(L, c.lua_gettop(L) - 1);
+                            continue;
+                        };
                         try writeJsonString(writer, kptr[0..klen]);
                         try writer.writeByte(':');
                         try luaValueToJson(L, -1, writer, depth + 1);

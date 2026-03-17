@@ -1,10 +1,6 @@
 // Lua 5.4 C API bindings and state management
 const std = @import("std");
-const c = @cImport({
-    @cInclude("lua.h");
-    @cInclude("lauxlib.h");
-    @cInclude("lualib.h");
-});
+const c = @import("lua_c.zig").c;
 
 // Re-export types and constants
 pub const lua_State = c.lua_State;
