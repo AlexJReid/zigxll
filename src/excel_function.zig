@@ -567,6 +567,8 @@ pub fn ExcelFunction(comptime meta: anytype) type {
                 return try val.as_utf8str();
             } else if (T == [][]const f64) {
                 return try val.as_matrix();
+            } else if (T == XLValue) {
+                return val;
             } else if (T == *xl.XLOPER12) {
                 @compileError("Optional XLOPER12 pointers are not supported");
             } else {
