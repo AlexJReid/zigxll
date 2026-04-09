@@ -162,6 +162,7 @@ The Lua implementation of the same calculations is only 2-3ms slower, perfectly 
 - [Creating functions](functions) -- types, options, returning strings/arrays, async, macros
 - [RTD servers](rtd-servers) -- pushing live data to Excel, using RTD from UDFs
 - [Lua functions](lua-functions) -- writing Excel functions in Lua with JSON or Zig definitions
+- [Using C/C++ libraries](c-libraries) -- calling existing native code from Excel functions
 - [How it works](how-it-works) -- comptime code generation, architecture
 
 ## Example functions
