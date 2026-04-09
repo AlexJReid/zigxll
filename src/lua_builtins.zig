@@ -6,11 +6,9 @@
 //   xllify.json_stringify(value) -> string
 //   xllify.regex_match(text, pattern, occurrence?) -> string
 //   xllify.regex_replace(text, pattern, replacement) -> string
-//   xllify.rtd_subscribe(prog_id, topic1, ...) -> lightuserdata (*XLOPER12) | nil
 
 const std = @import("std");
 const c = @import("lua_c.zig").c;
-const rtd_call = @import("rtd_call.zig");
 
 const allocator = std.heap.c_allocator;
 
@@ -192,57 +190,6 @@ fn writeJsonString(writer: anytype, s: []const u8) !void {
 }
 
 // ============================================================================
-// RTD
-// ============================================================================
-
-/// xllify.rtd_subscribe(prog_id, topic1, topic2, ...) -> lightuserdata | nil
-///
-/// Calls xlfRtd and returns the resulting *XLOPER12 as a Lua light userdata.
-/// The Lua function wrapper (pullResult) recognises light userdata and forwards
-/// it directly to Excel as an RTD subscription cell value.
-///
-/// IMPORTANT: Functions that call this MUST be declared @thread_safe false (or
-/// .thread_safe = false in hand-written Zig), because xlfRtd must run on
-/// Excel's main thread. Calling from a worker thread will crash or silently
-/// fail.
-fn luaRtdSubscribe(L: ?*c.lua_State) callconv(.c) c_int {
-    const state = L orelse return 0;
-    const n = c.lua_gettop(state);
-    if (n < 1) {
-        c.lua_pushnil(state);
-        return 1;
-    }
-
-    // First arg: prog_id (string)
-    var prog_id_len: usize = 0;
-    const prog_id_ptr = c.lua_tolstring(state, 1, &prog_id_len) orelse {
-        c.lua_pushnil(state);
-        return 1;
-    };
-    const prog_id = prog_id_ptr[0..prog_id_len];
-
-    // Remaining args: topic strings (up to 28)
-    const max_topics = 28;
-    var topics_buf: [max_topics][]const u8 = undefined;
-    var topic_count: usize = 0;
-    var i: c_int = 2;
-    while (i <= n and topic_count < max_topics) : (i += 1) {
-        var tlen: usize = 0;
-        const tptr = c.lua_tolstring(state, i, &tlen) orelse continue;
-        topics_buf[topic_count] = tptr[0..tlen];
-        topic_count += 1;
-    }
-
-    const result = rtd_call.subscribeDynamic(prog_id, topics_buf[0..topic_count]) catch {
-        c.lua_pushnil(state);
-        return 1;
-    };
-
-    c.lua_pushlightuserdata(state, result);
-    return 1;
-}
-
-// ============================================================================
 // Registration
 // ============================================================================
 
@@ -265,9 +212,6 @@ pub fn register(L: *c.lua_State) void {
 
     c.lua_pushcclosure(L, luaJsonStringify, 0);
     c.lua_setfield(L, -2, "json_stringify");
-
-    c.lua_pushcclosure(L, luaRtdSubscribe, 0);
-    c.lua_setfield(L, -2, "rtd_subscribe");
 
     c.lua_settop(L, c.lua_gettop(L) - 1); // pop xllify table
 }

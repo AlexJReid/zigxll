@@ -7,6 +7,7 @@ comptime {
     _ = @import("xlvalue.zig");
     _ = @import("rtd_tests.zig");
     _ = @import("lua_json_gen.zig");
+    _ = @import("async_cache_tests.zig");
     if (test_options.enable_lua) {
         _ = @import("lua_tests.zig");
     }

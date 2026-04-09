@@ -151,17 +151,16 @@ end
 
 --- Subscribe to a timer tick via the demo RTD server.
 -- Returns a live-updating counter that increments every 2 seconds.
--- Demonstrates xllify.rtd_subscribe from Lua.
 -- @name Lua.TimerTick
--- @thread_safe false
+-- @rtd
 function timer_tick()
-    return xllify.rtd_subscribe("zigxll.example.timer")
+    return "zigxll.rtd", "tick"
 end
 
 --- Subscribe to a timer tick with a named topic.
 -- @name Lua.TimerTickLabeled
 -- @param label string Topic label (ignored by the server, illustrates multi-topic)
--- @thread_safe false
+-- @rtd
 function timer_tick_labeled(label)
-    return xllify.rtd_subscribe("zigxll.example.timer", label)
+    return "zigxll.rtd", label
 end

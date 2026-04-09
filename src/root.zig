@@ -29,3 +29,5 @@ pub const lua_function = @import("lua_function.zig");
 pub const LuaFunction = lua_function.LuaFunction;
 pub const LuaParam = lua_function.LuaParam;
 pub const LuaParamType = lua_function.LuaParamType;
+pub const lua_rtd_function = @import("lua_rtd_function.zig");
+pub const LuaRtdFunction = lua_rtd_function.LuaRtdFunction;

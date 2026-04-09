@@ -87,6 +87,7 @@ function my_func(x, y) ... end
 |---|---|
 | `---` line | Function description (first `---` line) |
 | `@param name [type] [description]` | Parameter. Type is `number` (default), `string`, or `boolean`. |
+| `@rtd` | RTD subscription function. Return values are `prog_id, topic1, topic2, ...`. Automatically non-thread-safe. |
 | `@async` | Run on worker thread with result caching via RTD |
 | `@thread_safe false` | Disable multi-threaded recalculation (default: thread-safe) |
 | `@category name` | Excel function category (default: `"Lua Functions"`) |
@@ -323,36 +324,34 @@ end
 
 ## RTD subscriptions from Lua
 
-Lua functions can subscribe to an RTD server and return a live-updating cell value, just like Zig wrapper functions do. Use `xllify.rtd_subscribe`:
+Lua functions can subscribe to an RTD server and return a live-updating cell value, just like Zig wrapper functions do. Add `@rtd` to the annotation — the function returns the prog_id and topic strings, and the framework handles the `xlfRtd` call:
 
 ```lua
 --- Live price for a symbol
 -- @param symbol string Ticker symbol
--- @thread_safe false
+-- @rtd
 function price(symbol)
-    return xllify.rtd_subscribe("myprog.rtd", symbol)
+    return "myprog.rtd", symbol
 end
 ```
 
-`xllify.rtd_subscribe(prog_id, topic1, ...)` accepts a prog ID and up to 28 topic strings. It calls Excel's `xlfRtd` and returns the live cell value. Excel handles the subscription — the cell updates automatically whenever the RTD server pushes a new value.
+The function's return values are interpreted as: first = prog_id, rest = topic strings. The framework calls `xlfRtd` with these values and returns the live cell value to Excel. The cell updates automatically whenever the RTD server pushes a new value.
 
-The return value is forwarded directly to Excel as an RTD subscription; the cell will update live exactly as if the user had typed `=RTD("myprog.rtd", , symbol)`.
+`@rtd` automatically sets `thread_safe = false` (the underlying `xlfRtd` call must run on Excel's main thread). You don't need to add `@thread_safe false` separately.
 
-**Thread safety is mandatory.** Functions that call `xllify.rtd_subscribe` must be declared `@thread_safe false` (or `.thread_safe = false` in hand-written Zig). The underlying `xlfRtd` call must run on Excel's main thread. Without this, the call will fail or crash.
-
-If `xllify.rtd_subscribe` fails (e.g. the RTD server is not registered), it returns `nil`, which Excel renders as an empty cell.
-
-Multiple topic strings are supported:
+Multiple topic strings are just more return values:
 
 ```lua
 --- Price on a specific exchange
 -- @param exchange string Exchange code
 -- @param symbol string Ticker symbol
--- @thread_safe false
+-- @rtd
 function price_on_exchange(exchange, symbol)
-    return xllify.rtd_subscribe("myprog.rtd", exchange, symbol)
+    return "myprog.rtd", exchange, symbol
 end
 ```
+
+If the Lua function errors or returns no values, the cell shows `#VALUE!`.
 
 ## Limitations
 
@@ -360,4 +359,4 @@ end
 - No matrix/table parameter or return type support yet
 - Pool states are independent — global variable mutations don't propagate between states (use `xll.get`/`xll.set` for shared state)
 - `is_async = true` automatically forces `thread_safe = false` (async functions use `xlfRtd` which must run on Excel's main thread)
-- Functions using `xllify.rtd_subscribe` must be `@thread_safe false` — `xlfRtd` must run on Excel's main thread
+- `@rtd` functions are always non-thread-safe (`xlfRtd` must run on Excel's main thread)

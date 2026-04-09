@@ -208,20 +208,18 @@ return rtd_call.subscribe("myprog.rtd", &.{ exchange, symbol });
 
 ## Using RTD from Lua
 
-Lua functions can subscribe to an RTD server using `xllify.rtd_subscribe`. This is the Lua equivalent of calling `rtd_call.subscribe()` from Zig:
+Add `@rtd` to a Lua function annotation. The function returns the prog_id and topic strings; the framework handles the `xlfRtd` call:
 
 ```lua
 --- Subscribe to a live NATS subject
 -- @param subject string NATS subject
--- @thread_safe false
+-- @rtd
 function nats_sub(subject)
-    return xllify.rtd_subscribe("zigxll.connectors.nats", subject)
+    return "zigxll.connectors.nats", subject
 end
 ```
 
-`xllify.rtd_subscribe(prog_id, topic1, ...)` accepts a prog ID string and up to 28 topic strings. The cell updates live whenever the RTD server pushes a new value.
-
-**Thread safety is mandatory.** Functions calling `xllify.rtd_subscribe` must be `@thread_safe false` — `xlfRtd` must run on Excel's main thread. See [Lua Functions — RTD subscriptions](lua-functions.md#rtd-subscriptions-from-lua) for full details.
+The function's return values are: first = prog_id, rest = topic strings. `@rtd` automatically sets `thread_safe = false`. The cell updates live whenever the RTD server pushes a new value. See [Lua Functions — RTD subscriptions](lua-functions.md#rtd-subscriptions-from-lua) for full details.
 
 ## Limitations
 

@@ -176,14 +176,6 @@ pub fn LuaFunction(comptime meta: anytype) type {
                         .val = undefined,
                     });
                 },
-                lua.LUA_TLIGHTUSERDATA => {
-                    // xllify.rtd_subscribe() pushes the *XLOPER12 from rtd_call.subscribeDynamic
-                    // as a light userdata. Forward it directly — Excel frees it via xlAutoFree12.
-                    const ptr = lua.lua_touserdata(L, -1);
-                    lua.lua_pop(L, 1);
-                    if (ptr == null) return makeErrorValue();
-                    return @ptrCast(@alignCast(ptr.?));
-                },
                 else => {
                     lua.lua_pop(L, 1);
                     return makeErrorValue();
