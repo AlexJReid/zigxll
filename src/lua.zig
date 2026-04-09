@@ -11,6 +11,7 @@ pub const LUA_TNUMBER = c.LUA_TNUMBER;
 pub const LUA_TSTRING = c.LUA_TSTRING;
 pub const LUA_TFUNCTION = c.LUA_TFUNCTION;
 pub const LUA_TTABLE = c.LUA_TTABLE;
+pub const LUA_TLIGHTUSERDATA = c.LUA_TLIGHTUSERDATA;
 pub const LUA_REGISTRYINDEX = c.LUA_REGISTRYINDEX;
 
 // Re-export functions
@@ -40,6 +41,10 @@ pub fn lua_tonumber(L: *lua_State, idx: c_int) f64 {
 
 pub fn lua_tolstring(L: *lua_State, idx: c_int, len: *usize) ?[*]const u8 {
     return c.lua_tolstring(L, idx, len);
+}
+
+pub fn lua_touserdata(L: *lua_State, idx: c_int) ?*anyopaque {
+    return c.lua_touserdata(L, idx);
 }
 
 pub fn lua_pop(L: *lua_State, n: c_int) void {
