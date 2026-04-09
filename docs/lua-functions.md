@@ -321,9 +321,43 @@ function my_func(x)
 end
 ```
 
+## RTD subscriptions from Lua
+
+Lua functions can subscribe to an RTD server and return a live-updating cell value, just like Zig wrapper functions do. Use `xllify.rtd_subscribe`:
+
+```lua
+--- Live price for a symbol
+-- @param symbol string Ticker symbol
+-- @thread_safe false
+function price(symbol)
+    return xllify.rtd_subscribe("myprog.rtd", symbol)
+end
+```
+
+`xllify.rtd_subscribe(prog_id, topic1, ...)` accepts a prog ID and up to 28 topic strings. It calls Excel's `xlfRtd` and returns the live cell value. Excel handles the subscription — the cell updates automatically whenever the RTD server pushes a new value.
+
+The return value is forwarded directly to Excel as an RTD subscription; the cell will update live exactly as if the user had typed `=RTD("myprog.rtd", , symbol)`.
+
+**Thread safety is mandatory.** Functions that call `xllify.rtd_subscribe` must be declared `@thread_safe false` (or `.thread_safe = false` in hand-written Zig). The underlying `xlfRtd` call must run on Excel's main thread. Without this, the call will fail or crash.
+
+If `xllify.rtd_subscribe` fails (e.g. the RTD server is not registered), it returns `nil`, which Excel renders as an empty cell.
+
+Multiple topic strings are supported:
+
+```lua
+--- Price on a specific exchange
+-- @param exchange string Exchange code
+-- @param symbol string Ticker symbol
+-- @thread_safe false
+function price_on_exchange(exchange, symbol)
+    return xllify.rtd_subscribe("myprog.rtd", exchange, symbol)
+end
+```
+
 ## Limitations
 
 - Maximum 8 parameters per function (same as `ExcelFunction`)
 - No matrix/table parameter or return type support yet
 - Pool states are independent — global variable mutations don't propagate between states (use `xll.get`/`xll.set` for shared state)
 - `is_async = true` automatically forces `thread_safe = false` (async functions use `xlfRtd` which must run on Excel's main thread)
+- Functions using `xllify.rtd_subscribe` must be `@thread_safe false` — `xlfRtd` must run on Excel's main thread
