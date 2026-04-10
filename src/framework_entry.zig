@@ -165,6 +165,18 @@ pub fn xlAutoOpen() callconv(.c) c_int {
         }
     }
 
+    // Call user-defined init if present. Runs after all registration so users
+    // can call xlcAlert, load config files, etc. Returning an error here fails
+    // XLL load. Looked up on `user_mod` (the user's main module, re-exported
+    // as `root.user_functions` by the builder) to match the `function_modules`
+    // / `rtd_servers` convention.
+    if (comptime @hasDecl(user_mod, "init")) {
+        user_mod.init() catch |err| {
+            xl_helpers.debugLogFmt("user init failed: {s}", .{@errorName(err)});
+            return xl.xlretFailed;
+        };
+    }
+
     initialized = true;
     return xl.xlretSuccess;
 }
@@ -286,10 +298,14 @@ pub fn xlAutoClose() callconv(.c) c_int {
         }
     }
 
-    // Call user-defined cleanup if present
-    const root = @import("root");
-    if (comptime @hasDecl(root, "deinit")) {
-        root.deinit();
+    // Call user-defined cleanup if present. Looked up on `user_mod` (the user's
+    // main module, re-exported as `root.user_functions` by the builder) so it
+    // matches the `init` / `function_modules` / `rtd_servers` conventions.
+    // The lua block above already shadows `um` to the same value — redeclare
+    // here so this block is self-contained.
+    const user_mod = @import("root").user_functions;
+    if (comptime @hasDecl(user_mod, "deinit")) {
+        user_mod.deinit();
     }
 
     initialized = false;
