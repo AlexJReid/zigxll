@@ -27,8 +27,9 @@ pub const slow_double = ExcelFunction(.{
     .func = slowDoubleImpl,
 });
 
-fn slowDoubleImpl(x: f64) !f64 {
+fn slowDoubleImpl(x: f64, ctx: *AsyncContext) !f64 {
     // Simulate expensive work — cell shows #N/A during this sleep
+    ctx.yield(.{ .string = "Going to sleep for 3 s..." });
     sleepMs(3000);
     return x * 2.0;
 }
