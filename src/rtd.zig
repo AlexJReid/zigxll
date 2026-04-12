@@ -284,6 +284,16 @@ const PendingConnectList = std.ArrayListUnmanaged(LONG);
 pub const RtdContext = struct {
     update_event: ?*IRTDUpdateEvent = null,
     topics: TopicMap = TopicMap.init(std.heap.c_allocator),
+    /// Protects concurrent access to `topics`. The RTD COM callbacks
+    /// (ConnectData/RefreshData/DisconnectData) run on the main Excel
+    /// thread; handlers typically mutate their own state from worker
+    /// threads and also need to read `topics` (e.g. to set `dirty=true`
+    /// when pushing a new value). Without this mutex, a worker reading
+    /// `topics` races a ConnectData insert and can crash Excel by reading
+    /// through a reallocated hashmap backing array. All built-in access
+    /// to `topics` inside this file holds this mutex; handlers should
+    /// also lock it whenever they touch `ctx.topics` from a worker.
+    topics_mu: std.Thread.Mutex = .{},
     pending_connects: PendingConnectList = .empty,
     topic_count: usize = 0,
     user_data: ?*anyopaque = null,
@@ -297,6 +307,8 @@ pub const RtdContext = struct {
 
     /// Mark all active topics as dirty.
     pub fn markAllDirty(self: *RtdContext) void {
+        self.topics_mu.lock();
+        defer self.topics_mu.unlock();
         var it = self.topics.iterator();
         while (it.next()) |entry| {
             entry.value_ptr.dirty = true;
@@ -304,6 +316,10 @@ pub const RtdContext = struct {
     }
 
     pub fn deinit(self: *RtdContext) void {
+        // deinit runs during onTerminate; by contract all workers are gone
+        // by this point so no lock is needed. Taking it anyway for symmetry.
+        self.topics_mu.lock();
+        defer self.topics_mu.unlock();
         var it = self.topics.iterator();
         while (it.next()) |entry| {
             freeTopicStrings(entry.value_ptr.strings);
@@ -543,11 +559,15 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
                         &.{};
 
                     const s = getObj(self_opaque).getState();
-                    s.ctx.topics.put(topic_id, .{ .dirty = true, .strings = topic_strings }) catch {
-                        freeTopicStrings(topic_strings);
-                        return E_FAIL;
-                    };
-                    s.ctx.topic_count = s.ctx.topics.count();
+                    {
+                        s.ctx.topics_mu.lock();
+                        defer s.ctx.topics_mu.unlock();
+                        s.ctx.topics.put(topic_id, .{ .dirty = true, .strings = topic_strings }) catch {
+                            freeTopicStrings(topic_strings);
+                            return E_FAIL;
+                        };
+                        s.ctx.topic_count = s.ctx.topics.count();
+                    }
 
                     // Buffer for batch notification; also call onConnect for immediate per-topic handling
                     s.ctx.pending_connects.append(std.heap.c_allocator, topic_id) catch {};
@@ -626,6 +646,8 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
 
             var dirty_count: ULONG = 0;
             {
+                s.ctx.topics_mu.lock();
+                defer s.ctx.topics_mu.unlock();
                 var it = s.ctx.topics.iterator();
                 while (it.next()) |entry| {
                     if (entry.value_ptr.dirty) dirty_count += 1;
@@ -649,28 +671,48 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
             const psa = SafeArrayCreate(VT_VARIANT, 2, &bounds) orelse return E_FAIL;
 
             var row: LONG = 0;
-            var it = s.ctx.topics.iterator();
-            while (it.next()) |entry| {
-                if (entry.value_ptr.dirty) {
-                    entry.value_ptr.dirty = false;
-                    const tid = entry.key_ptr.*;
-
-                    var id_var: VARIANT = undefined;
-                    VariantInit(&id_var);
-                    id_var.vt = VT_I4;
-                    id_var.data = .{ .lval = tid };
-                    var idx0 = [2]LONG{ 0, row };
-                    _ = SafeArrayPutElement(psa, &idx0, @ptrCast(&id_var));
-
-                    var val_var: VARIANT = undefined;
-                    rtdValueToVariant(s.handler.onRefreshValue(&s.ctx, tid), &val_var);
-                    var idx1 = [2]LONG{ 1, row };
-                    _ = SafeArrayPutElement(psa, &idx1, @ptrCast(&val_var));
-
-                    row += 1;
+            // Snapshot dirty topic ids under the lock, then release it before
+            // calling onRefreshValue (which typically takes the handler's own
+            // mutex and could deadlock if called under topics_mu).
+            var dirty_ids: [256]LONG = undefined;
+            var dirty_n: usize = 0;
+            {
+                s.ctx.topics_mu.lock();
+                defer s.ctx.topics_mu.unlock();
+                var it = s.ctx.topics.iterator();
+                while (it.next()) |entry| {
+                    if (entry.value_ptr.dirty) {
+                        entry.value_ptr.dirty = false;
+                        if (dirty_n < dirty_ids.len) {
+                            dirty_ids[dirty_n] = entry.key_ptr.*;
+                            dirty_n += 1;
+                        } else {
+                            // More dirty topics than our stack buffer fits -
+                            // leave the remainder dirty; they'll be picked up
+                            // on the next refresh cycle.
+                            entry.value_ptr.dirty = true;
+                        }
+                    }
                 }
             }
 
+            for (dirty_ids[0..dirty_n]) |tid| {
+                var id_var: VARIANT = undefined;
+                VariantInit(&id_var);
+                id_var.vt = VT_I4;
+                id_var.data = .{ .lval = tid };
+                var idx0 = [2]LONG{ 0, row };
+                _ = SafeArrayPutElement(psa, &idx0, @ptrCast(&id_var));
+
+                var val_var: VARIANT = undefined;
+                rtdValueToVariant(s.handler.onRefreshValue(&s.ctx, tid), &val_var);
+                var idx1 = [2]LONG{ 1, row };
+                _ = SafeArrayPutElement(psa, &idx1, @ptrCast(&val_var));
+
+                row += 1;
+            }
+
+            topic_count.* = @intCast(row);
             parray_out.* = psa;
             return S_OK;
         }
@@ -679,10 +721,14 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
             debugLog("DisconnectData: TopicID={d}", .{topic_id});
             const s = getObj(self_opaque).getState();
 
-            if (s.ctx.topics.fetchRemove(topic_id)) |entry| {
-                freeTopicStrings(entry.value.strings);
+            {
+                s.ctx.topics_mu.lock();
+                defer s.ctx.topics_mu.unlock();
+                if (s.ctx.topics.fetchRemove(topic_id)) |entry| {
+                    freeTopicStrings(entry.value.strings);
+                }
+                s.ctx.topic_count = s.ctx.topics.count();
             }
-            s.ctx.topic_count = s.ctx.topics.count();
             s.handler.onDisconnect(&s.ctx, topic_id, s.ctx.topic_count);
             return S_OK;
         }
