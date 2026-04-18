@@ -145,6 +145,12 @@ xwin --accept-license splat --output ~/.xwin
 
 If you don't have Cargo, [install Rust](https://rustup.rs/) or grab a prebuilt binary from the [releases page](https://github.com/Jake-Shadle/xwin/releases).
 
+**Debug CRT:** xwin only includes release CRT libraries. If you get linker errors about `MSVCRTD.lib`, create a symlink:
+
+```bash
+ln -s ~/.xwin/crt/lib/x86_64/msvcrt.lib ~/.xwin/crt/lib/x86_64/MSVCRTD.lib
+```
+
 Once set up, `zig build` auto-detects `~/.xwin` and cross-compiles.
 
 ## Dependencies
