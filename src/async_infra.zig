@@ -22,13 +22,14 @@ const allocator = std.heap.c_allocator;
 // ============================================================================
 
 var global_pool: ?*std.Thread.Pool = null;
-var pool_mutex: std.Thread.Mutex = .{};
+var pool_mutex: std.Io.Mutex = std.Io.Mutex.init;
 
 const default_pool_size = 4;
+const io = std.Options.debug_io;
 
 pub fn getPool() *std.Thread.Pool {
-    pool_mutex.lock();
-    defer pool_mutex.unlock();
+    pool_mutex.lock(io) catch {};
+    defer pool_mutex.unlock(io);
     if (global_pool) |p| return p;
     const p = allocator.create(std.Thread.Pool) catch unreachable;
     p.init(.{
