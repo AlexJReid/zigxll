@@ -172,9 +172,9 @@ pub fn buildXll(
             const path3 = json_path.getPath3(b, null);
             const json_bytes = path3.root_dir.handle.readFileAlloc(
                 b.graph.io,
-                b.allocator,
                 path3.sub_path,
-                1024 * 1024,
+                b.allocator,
+                std.Io.Limit.limited(1024 * 1024),
             ) catch @panic("Failed to read lua_json file");
             const generated_src = lua_json_gen.generate(b.allocator, json_bytes) catch
                 @panic("Failed to generate Lua function definitions from JSON");
@@ -195,13 +195,13 @@ pub fn buildXll(
         var all_scripts: std.ArrayListUnmanaged([]const u8) = .empty;
         for (options.lua_scripts) |s| all_scripts.append(b.allocator, s) catch @panic("OOM");
         if (options.lua_scripts_dir) |dir_path| {
-            var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch
+            var dir = std.Io.Dir.cwd().openDir(b.graph.io, dir_path, .{ .iterate = true }) catch
                 @panic("cannot open lua_scripts_dir");
-            defer dir.close();
+            defer dir.close(b.graph.io);
             var it = dir.iterate();
-            while (it.next() catch @panic("lua_scripts_dir iterate failed")) |entry| {
+            while (it.next(b.graph.io) catch @panic("lua_scripts_dir iterate failed")) |entry| {
                 if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".lua")) {
-                    const full = std.fs.path.join(b.allocator, &.{ dir_path, entry.name }) catch @panic("OOM");
+                    const full = std.Io.Dir.path.join(b.allocator, &.{ dir_path, entry.name }) catch @panic("OOM");
                     all_scripts.append(b.allocator, full) catch @panic("OOM");
                 }
             }
@@ -215,7 +215,7 @@ pub fn buildXll(
             lua_gen.setCwd(b.path("."));
             lua_gen.addArgs(&.{ "--prefix", lua_prefix, "--category", lua_category, "--embed-root", "src" });
             for (all_scripts.items) |script| lua_gen.addArg(script);
-            const lua_generated = lua_gen.captureStdOut();
+            const lua_generated = lua_gen.captureStdOut(.{});
 
             // Write generated file to user's source tree (for IDE support and @embedFile resolution)
             const update_src = b.addUpdateSourceFiles();

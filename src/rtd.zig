@@ -29,7 +29,7 @@ const windows = std.os.windows;
 // Magic values ahoy
 // ============================================================================
 
-pub const HRESULT = windows.HRESULT;
+pub const HRESULT = i32; // Defined locally as Zig 0.16 removed std.os.windows.HRESULT
 pub const ULONG = windows.ULONG;
 pub const LONG = c_long;
 pub const GUID = windows.GUID;

@@ -252,27 +252,26 @@ pub fn LuaFunction(comptime meta: anytype) type {
 
         /// Build a topic key from function name + serialized Lua args.
         fn buildLuaTopicKey(args: [param_count]*xl.XLOPER12) ![]const u8 {
-            var buf: std.ArrayListUnmanaged(u8) = .empty;
+            var buf: std.ArrayList(u8) = .empty;
             errdefer buf.deinit(allocator);
-            const writer = buf.writer(allocator);
 
-            try writer.writeAll(name);
+            try buf.appendSlice(allocator, name);
             inline for (0..param_count) |i| {
-                try writer.writeByte('|');
+                try buf.append(allocator, '|');
                 const val = XLValue.fromXLOPER12(allocator, args[i].*, false);
                 switch (lua_params[i].type) {
                     .number => {
                         const num = val.as_double() catch 0;
-                        try writer.print("{d:.15}", .{num});
+                        try buf.print(allocator, "{d:.15}", .{num});
                     },
                     .string => {
                         const str = val.as_utf8str() catch "";
                         defer if (str.len > 0) allocator.free(str);
-                        try writer.writeAll(str);
+                        try buf.appendSlice(allocator, str);
                     },
                     .boolean => {
                         const b = val.as_bool() catch false;
-                        try writer.writeAll(if (b) "T" else "F");
+                        try buf.appendSlice(allocator, if (b) "T" else "F");
                     },
                 }
             }

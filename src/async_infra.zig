@@ -45,29 +45,29 @@ pub fn getPool() *std.Thread.Pool {
 // ============================================================================
 
 /// Append a serialized argument value to the key buffer.
-fn appendArg(writer: anytype, comptime T: type, arg: T) !void {
+fn appendArg(buf: *std.ArrayList(u8), comptime T: type, arg: T) !void {
     // Handle optional types
     const type_info = @typeInfo(T);
     if (type_info == .optional) {
         if (arg) |val| {
-            try appendArg(writer, type_info.optional.child, val);
+            try appendArg(buf, type_info.optional.child, val);
         } else {
-            try writer.writeAll("<nil>");
+            try buf.appendSlice(allocator, "<nil>");
         }
         return;
     }
 
     if (T == f64) {
-        try writer.print("{d:.15}", .{arg});
+        try buf.print(allocator, "{d:.15}", .{arg});
     } else if (T == bool) {
-        try writer.writeAll(if (arg) "T" else "F");
+        try buf.appendSlice(allocator, if (arg) "T" else "F");
     } else if (T == []const u8) {
-        try writer.writeAll(arg);
+        try buf.appendSlice(allocator, arg);
     } else if (T == [][]const f64) {
-        try writer.print("[{d}x{d}]", .{ arg.len, if (arg.len > 0) arg[0].len else 0 });
+        try buf.print(allocator, "[{d}x{d}]", .{ arg.len, if (arg.len > 0) arg[0].len else 0 });
         for (arg) |row| {
             for (row) |v| {
-                try writer.print(",{d:.10}", .{v});
+                try buf.print(allocator, ",{d:.10}", .{v});
             }
         }
     }
@@ -76,14 +76,13 @@ fn appendArg(writer: anytype, comptime T: type, arg: T) !void {
 /// Build a topic key from function name and arguments.
 /// Returns a heap-allocated string owned by the caller.
 pub fn buildTopicKey(comptime name: []const u8, comptime ParamTypes: []const type, args: anytype) ![]const u8 {
-    var buf: std.ArrayListUnmanaged(u8) = .empty;
+    var buf: std.ArrayList(u8) = .empty;
     errdefer buf.deinit(allocator);
-    const writer = buf.writer(allocator);
 
-    try writer.writeAll(name);
+    try buf.appendSlice(allocator, name);
     inline for (0..ParamTypes.len) |i| {
-        try writer.writeByte('|');
-        try appendArg(writer, ParamTypes[i], args[i]);
+        try buf.append(allocator, '|');
+        try appendArg(&buf, ParamTypes[i], args[i]);
     }
 
     return buf.toOwnedSlice(allocator);
@@ -202,14 +201,10 @@ extern "ole32" fn CoInitializeEx(reserved: ?*anyopaque, co_init: u32) callconv(.
 
 /// Windows-safe sleep. std.Thread.sleep may not work on cross-compiled targets.
 pub fn sleepMs(ms: u32) void {
-    if (@import("builtin").os.tag == .windows) {
-        const kernel32 = struct {
-            extern "kernel32" fn Sleep(dwMilliseconds: u32) callconv(.winapi) void;
-        };
-        kernel32.Sleep(ms);
-    } else {
-        std.Thread.sleep(@as(u64, ms) * std.time.ns_per_ms);
-    }
+    const kernel32 = struct {
+        extern "kernel32" fn Sleep(dwMilliseconds: u32) callconv(.winapi) void;
+    };
+    kernel32.Sleep(ms);
 }
 
 /// Spawn a worker thread using Windows CreateThread directly.
