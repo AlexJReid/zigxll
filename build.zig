@@ -171,6 +171,7 @@ pub fn buildXll(
             const lua_json_gen = @import("src/lua_json_gen.zig");
             const path3 = json_path.getPath3(b, null);
             const json_bytes = path3.root_dir.handle.readFileAlloc(
+                b.graph.io,
                 b.allocator,
                 path3.sub_path,
                 1024 * 1024,

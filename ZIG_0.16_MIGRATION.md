@@ -55,6 +55,16 @@ const path = std.fs.path.join(allocator, &.{ home, ".xwin" }) catch return;
 const path = std.Io.Dir.path.join(allocator, &.{ home, ".xwin" }) catch return;
 ```
 
+### File Reading
+
+```zig
+// Old
+const bytes = dir.handle.readFileAlloc(allocator, sub_path, max_size) catch ...;
+
+// New (requires io parameter)
+const bytes = dir.handle.readFileAlloc(b.graph.io, allocator, sub_path, max_size) catch ...;
+```
+
 ## Source File Changes
 
 ### Mutex API
