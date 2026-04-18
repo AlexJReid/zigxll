@@ -76,10 +76,10 @@ fn pushJsonValue(L: *c.lua_State, value: std.json.Value) void {
 /// xllify.json_stringify(value) -> string
 fn luaJsonStringify(L: ?*c.lua_State) callconv(.c) c_int {
     const state = L orelse return 0;
-    var buf: std.ArrayList(u8) = .{};
+    var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(allocator);
 
-    luaValueToJson(state, 1, buf.writer(allocator), 0) catch {
+    luaValueToJson(state, 1, &buf, 0) catch {
         _ = c.lua_pushlstring(state, "null", 4);
         return 1;
     };
@@ -89,40 +89,40 @@ fn luaJsonStringify(L: ?*c.lua_State) callconv(.c) c_int {
 }
 
 /// Serialise the Lua value at `idx` to JSON.
-fn luaValueToJson(L: *c.lua_State, idx: c_int, writer: anytype, depth: u32) !void {
+fn luaValueToJson(L: *c.lua_State, idx: c_int, buf: *std.ArrayList(u8), depth: u32) !void {
     if (depth > 50) return error.TooDeep;
 
     const abs_idx = if (idx < 0) c.lua_gettop(L) + idx + 1 else idx;
     const t = c.lua_type(L, abs_idx);
 
     switch (t) {
-        c.LUA_TNIL => try writer.writeAll("null"),
+        c.LUA_TNIL => try buf.appendSlice(allocator, "null"),
         c.LUA_TBOOLEAN => {
             if (c.lua_toboolean(L, abs_idx) != 0)
-                try writer.writeAll("true")
+                try buf.appendSlice(allocator, "true")
             else
-                try writer.writeAll("false");
+                try buf.appendSlice(allocator, "false");
         },
         c.LUA_TNUMBER => {
             if (c.lua_isinteger(L, abs_idx) != 0) {
                 const n = c.lua_tointegerx(L, abs_idx, null);
-                try std.fmt.format(writer, "{d}", .{n});
+                try buf.print(allocator, "{d}", .{n});
             } else {
                 const n = c.lua_tonumberx(L, abs_idx, null);
                 if (std.math.isNan(n) or std.math.isInf(n)) {
-                    try writer.writeAll("null");
+                    try buf.appendSlice(allocator, "null");
                 } else {
-                    try std.fmt.format(writer, "{d}", .{n});
+                    try buf.print(allocator, "{d}", .{n});
                 }
             }
         },
         c.LUA_TSTRING => {
             var slen: usize = 0;
             const sptr = c.lua_tolstring(L, abs_idx, &slen) orelse {
-                try writer.writeAll("null");
+                try buf.appendSlice(allocator, "null");
                 return;
             };
-            try writeJsonString(writer, sptr[0..slen]);
+            try writeJsonString(buf, sptr[0..slen]);
         },
         c.LUA_TTABLE => {
             // Detect array vs object: if key 1 exists, treat as array
@@ -131,62 +131,62 @@ fn luaValueToJson(L: *c.lua_State, idx: c_int, writer: anytype, depth: u32) !voi
             c.lua_settop(L, c.lua_gettop(L) - 1);
 
             if (is_array) {
-                try writer.writeByte('[');
+                try buf.append(allocator, '[');
                 const len = c.luaL_len(L, abs_idx);
                 var i: c.lua_Integer = 1;
                 while (i <= len) : (i += 1) {
-                    if (i > 1) try writer.writeByte(',');
+                    if (i > 1) try buf.append(allocator, ',');
                     _ = c.lua_rawgeti(L, abs_idx, i);
-                    try luaValueToJson(L, -1, writer, depth + 1);
+                    try luaValueToJson(L, -1, buf, depth + 1);
                     c.lua_settop(L, c.lua_gettop(L) - 1);
                 }
-                try writer.writeByte(']');
+                try buf.append(allocator, ']');
             } else {
-                try writer.writeByte('{');
+                try buf.append(allocator, '{');
                 var first = true;
                 c.lua_pushnil(L);
                 while (c.lua_next(L, abs_idx) != 0) {
                     // Only string keys in JSON objects
                     if (c.lua_type(L, -2) == c.LUA_TSTRING) {
-                        if (!first) try writer.writeByte(',');
+                        if (!first) try buf.append(allocator, ',');
                         first = false;
                         var klen: usize = 0;
                         const kptr = c.lua_tolstring(L, -2, &klen) orelse {
                             c.lua_settop(L, c.lua_gettop(L) - 1);
                             continue;
                         };
-                        try writeJsonString(writer, kptr[0..klen]);
-                        try writer.writeByte(':');
-                        try luaValueToJson(L, -1, writer, depth + 1);
+                        try writeJsonString(buf, kptr[0..klen]);
+                        try buf.append(allocator, ':');
+                        try luaValueToJson(L, -1, buf, depth + 1);
                     }
                     c.lua_settop(L, c.lua_gettop(L) - 1);
                 }
-                try writer.writeByte('}');
+                try buf.append(allocator, '}');
             }
         },
-        else => try writer.writeAll("null"),
+        else => try buf.appendSlice(allocator, "null"),
     }
 }
 
-fn writeJsonString(writer: anytype, s: []const u8) !void {
-    try writer.writeByte('"');
+fn writeJsonString(buf: *std.ArrayList(u8), s: []const u8) !void {
+    try buf.append(allocator, '"');
     for (s) |ch| {
         switch (ch) {
-            '"' => try writer.writeAll("\\\""),
-            '\\' => try writer.writeAll("\\\\"),
-            '\n' => try writer.writeAll("\\n"),
-            '\r' => try writer.writeAll("\\r"),
-            '\t' => try writer.writeAll("\\t"),
+            '"' => try buf.appendSlice(allocator, "\\\""),
+            '\\' => try buf.appendSlice(allocator, "\\\\"),
+            '\n' => try buf.appendSlice(allocator, "\\n"),
+            '\r' => try buf.appendSlice(allocator, "\\r"),
+            '\t' => try buf.appendSlice(allocator, "\\t"),
             else => {
                 if (ch < 0x20) {
-                    try std.fmt.format(writer, "\\u{x:0>4}", .{ch});
+                    try buf.print(allocator, "\\u{x:0>4}", .{ch});
                 } else {
-                    try writer.writeByte(ch);
+                    try buf.append(allocator, ch);
                 }
             },
         }
     }
-    try writer.writeByte('"');
+    try buf.append(allocator, '"');
 }
 
 // ============================================================================

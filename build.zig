@@ -40,30 +40,30 @@ pub fn build(b: *std.Build) void {
 
     xll.root_module.addImport("build_options", framework_build_options.createModule());
 
-    xll.addIncludePath(b.path("excel/include"));
-    xll.addLibraryPath(b.path("excel/lib"));
+    xll.root_module.addIncludePath(b.path("excel/include"));
+    xll.root_module.addLibraryPath(b.path("excel/lib"));
 
     if (enable_lua) {
-        addLuaPaths(b, xll);
+        addLuaPaths(b, xll.root_module);
     }
 
     // MSVC CRT stubs — safe in XLL context (Excel already initialized the CRT)
     if (target.result.os.tag == .windows) {
-        xll.addCSourceFiles(.{ .root = b.path("src"), .files = &.{"msvc_stubs.c"} });
+        xll.root_module.addCSourceFiles(.{ .root = b.path("src"), .files = &.{"msvc_stubs.c"} });
     }
 
     if (builtin.os.tag == .windows) {
-        addNativeMsvcPaths(b, xll);
+        addNativeMsvcPaths(b, xll.root_module);
     } else {
-        addXwinPaths(b, xll);
+        addXwinPaths(b, xll, xll.root_module);
     }
 
-    xll.linkLibC();
-    xll.linkSystemLibrary("user32");
-    xll.linkSystemLibrary("xlcall32");
-    xll.linkSystemLibrary("frmwrk32");
-    xll.linkSystemLibrary("vcruntime");
-    xll.linkSystemLibrary("ucrt");
+    xll.root_module.link_libc = true;
+    xll.root_module.linkSystemLibrary("user32", .{});
+    xll.root_module.linkSystemLibrary("xlcall32", .{});
+    xll.root_module.linkSystemLibrary("frmwrk32", .{});
+    xll.root_module.linkSystemLibrary("vcruntime", .{});
+    xll.root_module.linkSystemLibrary("ucrt", .{});
 
     const install_xll = b.addInstallFile(xll.getEmittedBin(), "lib/output.xll");
     b.getInstallStep().dependOn(&install_xll.step);
@@ -80,17 +80,17 @@ pub fn build(b: *std.Build) void {
         }),
     });
     tests.root_module.addImport("test_options", test_options.createModule());
-    tests.addIncludePath(b.path("excel/include"));
+    tests.root_module.addIncludePath(b.path("excel/include"));
     if (enable_lua) {
-        addLuaPaths(b, tests);
+        addLuaPaths(b, tests.root_module);
     }
-    tests.linkLibC();
+    tests.root_module.link_libc = true;
 
     // Only link Excel libraries on Windows
     if (native_target.result.os.tag == .windows) {
-        tests.addLibraryPath(b.path("excel/lib"));
-        tests.linkSystemLibrary("xlcall32");
-        tests.linkSystemLibrary("frmwrk32");
+        tests.root_module.addLibraryPath(b.path("excel/lib"));
+        tests.root_module.linkSystemLibrary("xlcall32", .{});
+        tests.root_module.linkSystemLibrary("frmwrk32", .{});
     }
 
     const run_tests = b.addRunArtifact(tests);
@@ -171,9 +171,10 @@ pub fn buildXll(
             const lua_json_gen = @import("src/lua_json_gen.zig");
             const path3 = json_path.getPath3(b, null);
             const json_bytes = path3.root_dir.handle.readFileAlloc(
-                b.allocator,
+                b.graph.io,
                 path3.sub_path,
-                1024 * 1024,
+                b.allocator,
+                std.Io.Limit.limited(1024 * 1024),
             ) catch @panic("Failed to read lua_json file");
             const generated_src = lua_json_gen.generate(b.allocator, json_bytes) catch
                 @panic("Failed to generate Lua function definitions from JSON");
@@ -194,13 +195,13 @@ pub fn buildXll(
         var all_scripts: std.ArrayListUnmanaged([]const u8) = .empty;
         for (options.lua_scripts) |s| all_scripts.append(b.allocator, s) catch @panic("OOM");
         if (options.lua_scripts_dir) |dir_path| {
-            var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch
+            var dir = std.Io.Dir.cwd().openDir(b.graph.io, dir_path, .{ .iterate = true }) catch
                 @panic("cannot open lua_scripts_dir");
-            defer dir.close();
+            defer dir.close(b.graph.io);
             var it = dir.iterate();
-            while (it.next() catch @panic("lua_scripts_dir iterate failed")) |entry| {
+            while (it.next(b.graph.io) catch @panic("lua_scripts_dir iterate failed")) |entry| {
                 if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".lua")) {
-                    const full = std.fs.path.join(b.allocator, &.{ dir_path, entry.name }) catch @panic("OOM");
+                    const full = std.Io.Dir.path.join(b.allocator, &.{ dir_path, entry.name }) catch @panic("OOM");
                     all_scripts.append(b.allocator, full) catch @panic("OOM");
                 }
             }
@@ -214,7 +215,7 @@ pub fn buildXll(
             lua_gen.setCwd(b.path("."));
             lua_gen.addArgs(&.{ "--prefix", lua_prefix, "--category", lua_category, "--embed-root", "src" });
             for (all_scripts.items) |script| lua_gen.addArg(script);
-            const lua_generated = lua_gen.captureStdOut();
+            const lua_generated = lua_gen.captureStdOut(.{});
 
             // Write generated file to user's source tree (for IDE support and @embedFile resolution)
             const update_src = b.addUpdateSourceFiles();
@@ -240,58 +241,56 @@ pub fn buildXll(
     const excel_include = xll_dep.path("excel/include");
     const excel_lib = xll_dep.path("excel/lib");
 
-    xll.addIncludePath(excel_include);
-    xll.addLibraryPath(excel_lib);
     xll.root_module.addIncludePath(excel_include);
+    xll.root_module.addLibraryPath(excel_lib);
 
     if (options.enable_lua) {
-        addLuaFromDep(xll_dep, xll);
+        addLuaFromDep(xll_dep, xll.root_module);
     }
 
     // MSVC CRT stubs — safe in XLL context (Excel already initialized the CRT)
     if (target.result.os.tag == .windows) {
-        xll.addCSourceFiles(.{ .root = xll_dep.path("src"), .files = &.{"msvc_stubs.c"} });
+        xll.root_module.addCSourceFiles(.{ .root = xll_dep.path("src"), .files = &.{"msvc_stubs.c"} });
     }
 
     // Add Windows SDK/CRT paths to both the XLL compile step and the user module,
     // so that any C code the user compiles (e.g. nats.c) can find vcrt/ucrt headers and libs.
     if (builtin.os.tag == .windows) {
-        addNativeMsvcPaths(b, xll);
+        addNativeMsvcPaths(b, xll.root_module);
     } else {
-        addXwinPaths(b, xll);
+        addXwinPaths(b, xll, xll.root_module);
         applyXwinToModule(b, options.user_module);
     }
 
-    xll.linkLibC();
-    xll.linkSystemLibrary("user32");
-    xll.linkSystemLibrary("xlcall32");
-    xll.linkSystemLibrary("frmwrk32");
+    xll.root_module.link_libc = true;
+    xll.root_module.linkSystemLibrary("user32", .{});
+    xll.root_module.linkSystemLibrary("xlcall32", .{});
+    xll.root_module.linkSystemLibrary("frmwrk32", .{});
 
     // COM/RTD support
-    xll.linkSystemLibrary("oleaut32");
-    xll.linkSystemLibrary("advapi32");
-    xll.linkSystemLibrary("ole32");
-    xll.linkSystemLibrary("vcruntime");
-    xll.linkSystemLibrary("ucrt");
+    xll.root_module.linkSystemLibrary("oleaut32", .{});
+    xll.root_module.linkSystemLibrary("advapi32", .{});
+    xll.root_module.linkSystemLibrary("ole32", .{});
+    xll.root_module.linkSystemLibrary("vcruntime", .{});
+    xll.root_module.linkSystemLibrary("ucrt", .{});
 
     return xll;
 }
 
 /// Compile Lua 5.4 from source (from xll dependency)
-fn addLuaFromDep(xll_dep: *std.Build.Dependency, compile: *std.Build.Step.Compile) void {
+fn addLuaFromDep(xll_dep: *std.Build.Dependency, mod: *std.Build.Module) void {
     const lua_src = xll_dep.path("deps/lua/src");
-    compile.addIncludePath(lua_src);
-    compile.root_module.addIncludePath(lua_src);
+    mod.addIncludePath(lua_src);
     const xll_framework = xll_dep.module("xll");
     xll_framework.addIncludePath(lua_src);
 
-    compile.addCSourceFiles(.{ .root = lua_src, .files = &lua_sources });
+    mod.addCSourceFiles(.{ .root = lua_src, .files = &lua_sources });
 }
 
 /// Compile Lua 5.4 from source (for framework's own build)
-fn addLuaPaths(b: *std.Build, compile: *std.Build.Step.Compile) void {
-    compile.addIncludePath(b.path("deps/lua/src"));
-    compile.addCSourceFiles(.{ .root = b.path("deps/lua/src"), .files = &lua_sources });
+fn addLuaPaths(b: *std.Build, mod: *std.Build.Module) void {
+    mod.addIncludePath(b.path("deps/lua/src"));
+    mod.addCSourceFiles(.{ .root = b.path("deps/lua/src"), .files = &lua_sources });
 }
 
 const lua_sources = .{
@@ -306,7 +305,7 @@ const lua_sources = .{
 };
 
 fn requireEnv(b: *std.Build, name: []const u8) []const u8 {
-    return std.process.getEnvVarOwned(b.allocator, name) catch {
+    return b.graph.environ_map.get(name) orelse {
         std.log.err("Missing environment variable '{s}'. Run from a Visual Studio Developer Command Prompt (vcvarsall.bat).", .{name});
         @panic("MSVC environment not configured");
     };
@@ -314,7 +313,7 @@ fn requireEnv(b: *std.Build, name: []const u8) []const u8 {
 
 /// On native Windows, use VCToolsInstallDir / WindowsSdkDir env vars to locate the MSVC CRT.
 /// These are set by the Visual Studio Developer Command Prompt (vcvarsall.bat).
-fn addNativeMsvcPaths(b: *std.Build, compile: *std.Build.Step.Compile) void {
+fn addNativeMsvcPaths(b: *std.Build, mod: *std.Build.Module) void {
     const vctools = requireEnv(b, "VCToolsInstallDir");
     const ucrt_sdk = requireEnv(b, "UniversalCRTSdkDir");
     const ucrt_ver = requireEnv(b, "UCRTVersion");
@@ -329,14 +328,14 @@ fn addNativeMsvcPaths(b: *std.Build, compile: *std.Build.Step.Compile) void {
     const um_inc_dir = b.fmt("{s}Include\\{s}\\um", .{ win_sdk, win_sdk_ver });
     const shared_inc_dir = b.fmt("{s}Include\\{s}\\shared", .{ win_sdk, win_sdk_ver });
 
-    compile.addLibraryPath(.{ .cwd_relative = msvc_lib_dir });
-    compile.addLibraryPath(.{ .cwd_relative = ucrt_lib_dir });
-    compile.addLibraryPath(.{ .cwd_relative = kernel32_lib_dir });
+    mod.addLibraryPath(.{ .cwd_relative = msvc_lib_dir });
+    mod.addLibraryPath(.{ .cwd_relative = ucrt_lib_dir });
+    mod.addLibraryPath(.{ .cwd_relative = kernel32_lib_dir });
 
-    compile.addSystemIncludePath(.{ .cwd_relative = vctools_inc });
-    compile.addSystemIncludePath(.{ .cwd_relative = ucrt_inc_dir });
-    compile.addSystemIncludePath(.{ .cwd_relative = um_inc_dir });
-    compile.addSystemIncludePath(.{ .cwd_relative = shared_inc_dir });
+    mod.addSystemIncludePath(.{ .cwd_relative = vctools_inc });
+    mod.addSystemIncludePath(.{ .cwd_relative = ucrt_inc_dir });
+    mod.addSystemIncludePath(.{ .cwd_relative = um_inc_dir });
+    mod.addSystemIncludePath(.{ .cwd_relative = shared_inc_dir });
 }
 
 /// When cross-compiling from Mac/Linux, add xwin system include paths to a module
@@ -345,10 +344,10 @@ fn addNativeMsvcPaths(b: *std.Build, compile: *std.Build.Step.Compile) void {
 fn applyXwinToModule(b: *std.Build, mod: *std.Build.Module) void {
     if (builtin.os.tag == .windows) return;
 
-    const home = std.process.getEnvVarOwned(b.allocator, "HOME") catch return;
-    const xwin_dir = std.fs.path.join(b.allocator, &.{ home, ".xwin" }) catch return;
-    var dir = std.fs.openDirAbsolute(xwin_dir, .{}) catch return;
-    dir.close();
+    const home = b.graph.environ_map.get("HOME") orelse return;
+    const xwin_dir = std.Io.Dir.path.join(b.allocator, &.{ home, ".xwin" }) catch return;
+    // Check if xwin directory exists
+    std.Io.Dir.accessAbsolute(b.graph.io, xwin_dir, .{}) catch return;
 
     mod.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/crt/include", .{xwin_dir}) });
     mod.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/sdk/include/ucrt", .{xwin_dir}) });
@@ -358,21 +357,21 @@ fn applyXwinToModule(b: *std.Build, mod: *std.Build.Module) void {
 
 /// If ~/.xwin exists (installed via `brew install xwin && xwin --accept-license splat --output ~/.xwin`),
 /// add its Windows SDK and CRT paths so we can cross-compile to Windows from Mac/Linux.
-fn addXwinPaths(b: *std.Build, compile: *std.Build.Step.Compile) void {
+fn addXwinPaths(b: *std.Build, compile: *std.Build.Step.Compile, mod: *std.Build.Module) void {
     // xwin is only used for cross-compiling to Windows from Mac/Linux
-    const home = std.process.getEnvVarOwned(b.allocator, "HOME") catch return;
-    const xwin_dir = std.fs.path.join(b.allocator, &.{ home, ".xwin" }) catch return;
-    var dir = std.fs.openDirAbsolute(xwin_dir, .{}) catch return;
-    dir.close();
+    const home = b.graph.environ_map.get("HOME") orelse return;
+    const xwin_dir = std.Io.Dir.path.join(b.allocator, &.{ home, ".xwin" }) catch return;
+    // Check if xwin directory exists
+    std.Io.Dir.accessAbsolute(b.graph.io, xwin_dir, .{}) catch return;
 
-    compile.addLibraryPath(.{ .cwd_relative = b.fmt("{s}/sdk/lib/um/x86_64", .{xwin_dir}) });
-    compile.addLibraryPath(.{ .cwd_relative = b.fmt("{s}/crt/lib/x86_64", .{xwin_dir}) });
-    compile.addLibraryPath(.{ .cwd_relative = b.fmt("{s}/sdk/lib/ucrt/x86_64", .{xwin_dir}) });
+    mod.addLibraryPath(.{ .cwd_relative = b.fmt("{s}/sdk/lib/um/x86_64", .{xwin_dir}) });
+    mod.addLibraryPath(.{ .cwd_relative = b.fmt("{s}/crt/lib/x86_64", .{xwin_dir}) });
+    mod.addLibraryPath(.{ .cwd_relative = b.fmt("{s}/sdk/lib/ucrt/x86_64", .{xwin_dir}) });
 
-    compile.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/crt/include", .{xwin_dir}) });
-    compile.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/sdk/include/ucrt", .{xwin_dir}) });
-    compile.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/sdk/include/um", .{xwin_dir}) });
-    compile.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/sdk/include/shared", .{xwin_dir}) });
+    mod.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/crt/include", .{xwin_dir}) });
+    mod.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/sdk/include/ucrt", .{xwin_dir}) });
+    mod.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/sdk/include/um", .{xwin_dir}) });
+    mod.addSystemIncludePath(.{ .cwd_relative = b.fmt("{s}/sdk/include/shared", .{xwin_dir}) });
 
     // Write a libc configuration file so Zig knows where the MSVC CRT lives
     const libc_conf = b.fmt(

@@ -16,9 +16,9 @@ pub const LuaJsonError = error{
 /// Generate Zig source from a JSON function definitions file.
 /// Returns the generated source as a string owned by `allocator`.
 pub fn generate(allocator: std.mem.Allocator, json_bytes: []const u8) ![]const u8 {
-    var list = std.ArrayListUnmanaged(u8){};
-    errdefer list.deinit(allocator);
-    const w = list.writer(allocator);
+    var writer = std.Io.Writer.Allocating.init(allocator);
+    errdefer writer.deinit();
+    const w = &writer.writer;
 
     try w.writeAll(
         \\// Auto-generated from lua_functions.json — do not edit
@@ -110,7 +110,7 @@ pub fn generate(allocator: std.mem.Allocator, json_bytes: []const u8) ![]const u
         try w.writeAll("});\n\n");
     }
 
-    return list.toOwnedSlice(allocator);
+    return writer.toOwnedSlice();
 }
 
 fn getStr(obj: std.json.ObjectMap, key: []const u8) ?[]const u8 {

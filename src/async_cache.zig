@@ -22,19 +22,29 @@ pub const CachedResult = struct {
 /// The cache owns copies of all key strings.
 pub const AsyncCache = struct {
     map: std.StringHashMap(CachedResult),
-    mutex: std.Thread.Mutex,
+    mutex: std.Io.Mutex,
+
+    const io = std.Options.debug_io;
 
     pub fn init() AsyncCache {
         return .{
             .map = std.StringHashMap(CachedResult).init(allocator),
-            .mutex = .{},
+            .mutex = std.Io.Mutex.init,
         };
+    }
+
+    fn lock(self: *AsyncCache) void {
+        self.mutex.lock(io) catch {};
+    }
+
+    fn unlock(self: *AsyncCache) void {
+        self.mutex.unlock(io);
     }
 
     /// Look up a topic key.  Returns null on miss.
     pub fn get(self: *AsyncCache, key: []const u8) ?CachedResult {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.lock();
+        defer self.unlock();
         return self.map.get(key);
     }
 
@@ -42,8 +52,8 @@ pub const AsyncCache = struct {
     /// If the key is new, the cache dupes it and owns the copy.
     /// If the key already exists, just updates the value.
     pub fn put(self: *AsyncCache, key: []const u8, result: CachedResult) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.lock();
+        defer self.unlock();
 
         // If key already exists, just update the value
         if (self.map.getEntry(key)) |entry| {
@@ -60,8 +70,8 @@ pub const AsyncCache = struct {
 
     /// Remove all cached results, forcing async functions to re-execute.
     pub fn clear(self: *AsyncCache) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.lock();
+        defer self.unlock();
         var it = self.map.iterator();
         while (it.next()) |entry| {
             allocator.free(@constCast(entry.key_ptr.*));
@@ -71,19 +81,20 @@ pub const AsyncCache = struct {
 
     /// Check whether a key exists (used to avoid double-spawning).
     pub fn contains(self: *AsyncCache, key: []const u8) bool {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.lock();
+        defer self.unlock();
         return self.map.contains(key);
     }
 };
 
 // Global singleton — all async functions share one cache.
 var global_cache: ?*AsyncCache = null;
-var cache_init_mutex: std.Thread.Mutex = .{};
+var cache_init_mutex: std.Io.Mutex = std.Io.Mutex.init;
 
 pub fn getGlobalCache() *AsyncCache {
-    cache_init_mutex.lock();
-    defer cache_init_mutex.unlock();
+    const io = std.Options.debug_io;
+    cache_init_mutex.lock(io) catch {};
+    defer cache_init_mutex.unlock(io);
     if (global_cache) |c| return c;
     const c = allocator.create(AsyncCache) catch unreachable;
     c.* = AsyncCache.init();

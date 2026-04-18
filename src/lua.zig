@@ -84,7 +84,8 @@ var state_pool: [pool_size]StateSlot = [_]StateSlot{.{}} ** pool_size;
 var pool_initialized: bool = false;
 
 /// Mutex for the main (sync) state — slot 0.
-var main_state_mutex: std.Thread.Mutex = .{};
+var main_state_mutex: std.Io.Mutex = std.Io.Mutex.init;
+const io = std.Options.debug_io;
 
 /// Cached script sources for loading into new states.
 const ScriptEntry = struct {
@@ -145,17 +146,25 @@ const SharedValue = union(enum) {
 };
 
 var shared_store: std.StringHashMapUnmanaged(SharedValue) = .empty;
-var shared_store_mutex: std.Thread.Mutex = .{};
+var shared_store_mutex: std.Io.Mutex = std.Io.Mutex.init;
+
+fn lockSharedStore() void {
+    shared_store_mutex.lock(io) catch {};
+}
+
+fn unlockSharedStore() void {
+    shared_store_mutex.unlock(io);
+}
 
 fn sharedGet(key: []const u8) ?SharedValue {
-    shared_store_mutex.lock();
-    defer shared_store_mutex.unlock();
+    lockSharedStore();
+    defer unlockSharedStore();
     return shared_store.get(key);
 }
 
 fn sharedSet(key: []const u8, value: ?SharedValue) void {
-    shared_store_mutex.lock();
-    defer shared_store_mutex.unlock();
+    lockSharedStore();
+    defer unlockSharedStore();
 
     const alloc = std.heap.c_allocator;
 
@@ -298,12 +307,12 @@ pub fn getState() ?*lua_State {
 
 /// Lock the main state for sync use.
 pub fn lockMain() void {
-    main_state_mutex.lock();
+    main_state_mutex.lock(io) catch {};
 }
 
 /// Unlock the main state after sync use.
 pub fn unlockMain() void {
-    main_state_mutex.unlock();
+    main_state_mutex.unlock(io);
 }
 
 /// Acquire any free state from the pool for async use.

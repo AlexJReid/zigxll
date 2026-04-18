@@ -37,7 +37,7 @@ const TimerHandler = struct {
     fn timerProc(self: *TimerHandler, ctx: *rtd.RtdContext) void {
         rtd.debugLog("Timer thread started", .{});
         while (self.running.load(.acquire)) {
-            std.Thread.sleep(2 * std.time.ns_per_s);
+            xll.async_infra.sleepMs(2000);
             if (!self.running.load(.acquire)) break;
 
             self.counter += 1;

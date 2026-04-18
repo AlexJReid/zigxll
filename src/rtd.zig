@@ -29,7 +29,7 @@ const windows = std.os.windows;
 // Magic values ahoy
 // ============================================================================
 
-pub const HRESULT = windows.HRESULT;
+pub const HRESULT = i32; // Defined locally as Zig 0.16 removed std.os.windows.HRESULT
 pub const ULONG = windows.ULONG;
 pub const LONG = c_long;
 pub const GUID = windows.GUID;
@@ -293,10 +293,20 @@ pub const RtdContext = struct {
     /// through a reallocated hashmap backing array. All built-in access
     /// to `topics` inside this file holds this mutex; handlers should
     /// also lock it whenever they touch `ctx.topics` from a worker.
-    topics_mu: std.Thread.Mutex = .{},
+    topics_mu: std.Io.Mutex = std.Io.Mutex.init,
     pending_connects: PendingConnectList = .empty,
     topic_count: usize = 0,
     user_data: ?*anyopaque = null,
+
+    const io = std.Options.debug_io;
+
+    pub fn lockTopics(self: *RtdContext) void {
+        self.topics_mu.lock(io) catch {};
+    }
+
+    pub fn unlockTopics(self: *RtdContext) void {
+        self.topics_mu.unlock(io);
+    }
 
     /// Call UpdateNotify on Excel's callback to trigger RefreshData.
     pub fn notifyExcel(self: *RtdContext) void {
@@ -307,8 +317,8 @@ pub const RtdContext = struct {
 
     /// Mark all active topics as dirty.
     pub fn markAllDirty(self: *RtdContext) void {
-        self.topics_mu.lock();
-        defer self.topics_mu.unlock();
+        self.lockTopics();
+        defer self.unlockTopics();
         var it = self.topics.iterator();
         while (it.next()) |entry| {
             entry.value_ptr.dirty = true;
@@ -318,8 +328,8 @@ pub const RtdContext = struct {
     pub fn deinit(self: *RtdContext) void {
         // deinit runs during onTerminate; by contract all workers are gone
         // by this point so no lock is needed. Taking it anyway for symmetry.
-        self.topics_mu.lock();
-        defer self.topics_mu.unlock();
+        self.lockTopics();
+        defer self.unlockTopics();
         var it = self.topics.iterator();
         while (it.next()) |entry| {
             freeTopicStrings(entry.value_ptr.strings);
@@ -560,8 +570,8 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
 
                     const s = getObj(self_opaque).getState();
                     {
-                        s.ctx.topics_mu.lock();
-                        defer s.ctx.topics_mu.unlock();
+                        s.ctx.lockTopics();
+                        defer s.ctx.unlockTopics();
                         s.ctx.topics.put(topic_id, .{ .dirty = true, .strings = topic_strings }) catch {
                             freeTopicStrings(topic_strings);
                             return E_FAIL;
@@ -646,8 +656,8 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
 
             var dirty_count: ULONG = 0;
             {
-                s.ctx.topics_mu.lock();
-                defer s.ctx.topics_mu.unlock();
+                s.ctx.lockTopics();
+                defer s.ctx.unlockTopics();
                 var it = s.ctx.topics.iterator();
                 while (it.next()) |entry| {
                     if (entry.value_ptr.dirty) dirty_count += 1;
@@ -677,8 +687,8 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
             var dirty_ids: [256]LONG = undefined;
             var dirty_n: usize = 0;
             {
-                s.ctx.topics_mu.lock();
-                defer s.ctx.topics_mu.unlock();
+                s.ctx.lockTopics();
+                defer s.ctx.unlockTopics();
                 var it = s.ctx.topics.iterator();
                 while (it.next()) |entry| {
                     if (entry.value_ptr.dirty) {
@@ -722,8 +732,8 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
             const s = getObj(self_opaque).getState();
 
             {
-                s.ctx.topics_mu.lock();
-                defer s.ctx.topics_mu.unlock();
+                s.ctx.lockTopics();
+                defer s.ctx.unlockTopics();
                 if (s.ctx.topics.fetchRemove(topic_id)) |entry| {
                     freeTopicStrings(entry.value.strings);
                 }
