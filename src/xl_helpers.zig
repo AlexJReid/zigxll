@@ -43,3 +43,34 @@ pub fn debugLogRuntime(msg: []const u8) void {
 pub inline fn xlFree(oper: *xl.XLOPER12) void {
     _ = xl.Excel12f(xl.xlFree, null, 1, oper);
 }
+
+fn xloperBaseType(xltype: @TypeOf(@as(xl.XLOPER12, undefined).xltype)) @TypeOf(@as(xl.XLOPER12, undefined).xltype) {
+    return xltype & 0xFFF;
+}
+
+pub fn freeDllOwnedPayload(allocator: std.mem.Allocator, oper: *xl.XLOPER12) void {
+    switch (xloperBaseType(oper.xltype)) {
+        xl.xltypeStr => {
+            if (oper.val.str) |str_ptr| {
+                const len = @as(usize, @intCast(str_ptr[0]));
+                allocator.free(str_ptr[0 .. len + 2]);
+            }
+        },
+        xl.xltypeMulti => {
+            const rows = @as(usize, @intCast(oper.val.array.rows));
+            const cols = @as(usize, @intCast(oper.val.array.columns));
+            const cells = oper.val.array.lparray[0 .. rows * cols];
+            for (cells) |*cell| {
+                freeDllOwnedPayload(allocator, cell);
+            }
+            allocator.free(cells);
+        },
+        else => {},
+    }
+}
+
+pub fn destroyDllOwnedXloper(allocator: std.mem.Allocator, oper: *xl.XLOPER12) void {
+    if ((oper.xltype & xl.xlbitDLLFree) == 0) return;
+    freeDllOwnedPayload(allocator, oper);
+    allocator.destroy(oper);
+}

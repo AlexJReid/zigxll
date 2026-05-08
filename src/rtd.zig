@@ -422,7 +422,8 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
 
         // ---- server state (non-extern, allocated on heap) ----
         const ServerState = struct {
-            ref_count: ULONG = 1,
+            ref_count: ULONG = 0,
+            terminated: bool = false,
             ctx: RtdContext = .{},
             handler: Handler = .{},
         };
@@ -494,10 +495,7 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
             s.ref_count -= 1;
             const rc = s.ref_count;
             if (rc == 0) {
-                s.handler.onTerminate(&s.ctx);
-                if (s.ctx.update_event) |evt| {
-                    _ = evt.vtable.Release(@ptrCast(evt));
-                }
+                terminateOnce(s);
                 s.ctx.deinit();
                 std.heap.c_allocator.destroy(s);
                 std.heap.c_allocator.destroy(obj);
@@ -752,13 +750,20 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
             debugLog("ServerTerminate", .{});
             const s = getObj(self_opaque).getState();
 
+            terminateOnce(s);
+            return S_OK;
+        }
+
+        fn terminateOnce(s: *ServerState) void {
+            if (s.terminated) return;
+            s.terminated = true;
+
             s.handler.onTerminate(&s.ctx);
 
             if (s.ctx.update_event) |evt| {
                 _ = evt.vtable.Release(@ptrCast(evt));
                 s.ctx.update_event = null;
             }
-            return S_OK;
         }
 
         fn connectDataStub(_: *anyopaque, _: LONG, _: **SAFEARRAY, _: *c_short, _: *VARIANT) callconv(.winapi) HRESULT {
@@ -813,7 +818,13 @@ pub fn RtdServer(comptime Handler: type, comptime config: RtdConfig) type {
             obj.* = .{ .state = @ptrCast(s) };
             _ = @atomicRmw(i32, &g_object_count, .Add, 1, .monotonic);
 
-            return queryInterface(@ptrCast(obj), riid, ppv);
+            const hr = queryInterface(@ptrCast(obj), riid, ppv);
+            if (hr != S_OK) {
+                std.heap.c_allocator.destroy(s);
+                std.heap.c_allocator.destroy(obj);
+                _ = @atomicRmw(i32, &g_object_count, .Sub, 1, .monotonic);
+            }
+            return hr;
         }
 
         fn cfLockServer(_: *anyopaque, fLock: c_int) callconv(.winapi) HRESULT {

@@ -317,14 +317,7 @@ pub fn xlAutoFree12(pxFree: ?*xl.XLOPER12) callconv(.c) void {
         // Only free if xlbitDLLFree is set (means we allocated it)
 
         if ((oper.xltype & xl.xlbitDLLFree) != 0) {
-            // Free string data if present
-            if ((oper.xltype & xl.xltypeStr) != 0) {
-                if (oper.val.str) |str_ptr| {
-                    const len = @as(usize, @intCast(str_ptr[0]));
-                    // Free: length prefix (1) + string chars (len) + null terminator (1)
-                    excel_allocator.free(str_ptr[0 .. len + 2]);
-                }
-            }
+            xl_helpers.freeDllOwnedPayload(excel_allocator, oper);
             // Free the XLOPER12 structure itself
             excel_allocator.destroy(oper);
         }

@@ -156,12 +156,6 @@ fn unlockSharedStore() void {
     shared_store_mutex.unlock(io);
 }
 
-fn sharedGet(key: []const u8) ?SharedValue {
-    lockSharedStore();
-    defer unlockSharedStore();
-    return shared_store.get(key);
-}
-
 fn sharedSet(key: []const u8, value: ?SharedValue) void {
     lockSharedStore();
     defer unlockSharedStore();
@@ -202,7 +196,10 @@ fn luaXllGet(L: ?*c.lua_State) callconv(.c) c_int {
     };
     const key = ptr[0..len];
 
-    if (sharedGet(key)) |val| {
+    lockSharedStore();
+    defer unlockSharedStore();
+
+    if (shared_store.get(key)) |val| {
         switch (val) {
             .number => |n| c.lua_pushnumber(state, n),
             .boolean => |b| c.lua_pushboolean(state, if (b) 1 else 0),
@@ -270,6 +267,16 @@ pub fn getPoolSize() usize {
 /// Initialize the state pool. Creates `pool_size` independent Lua states.
 pub fn init() !void {
     if (pool_initialized) return;
+
+    errdefer {
+        for (&state_pool) |*slot| {
+            if (slot.L) |L| {
+                c.lua_close(L);
+                slot.L = null;
+            }
+            slot.in_use = std.atomic.Value(bool).init(false);
+        }
+    }
 
     for (&state_pool) |*slot| {
         slot.L = createState() catch return error.LuaInitFailed;

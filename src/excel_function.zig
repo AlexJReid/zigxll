@@ -625,8 +625,8 @@ pub fn ExcelFunction(comptime meta: anytype) type {
                 });
             } else if (T == []const u8 or T == []u8) {
                 defer allocator.free(result);
-                const val = XLValue.fromUtf8String(allocator, result) catch return makeErrorValue();
-                return heapXloper(val.m_val);
+                var val = XLValue.fromUtf8String(allocator, result) catch return makeErrorValue();
+                return heapXloper(val.intoXLOPER12());
             } else if (T == [][]const f64 or T == [][]f64) {
                 defer {
                     for (result) |row| {
@@ -634,8 +634,8 @@ pub fn ExcelFunction(comptime meta: anytype) type {
                     }
                     allocator.free(result);
                 }
-                const val = XLValue.fromMatrix(allocator, result) catch return makeErrorValue();
-                return heapXloper(val.m_val);
+                var val = XLValue.fromMatrix(allocator, result) catch return makeErrorValue();
+                return heapXloper(val.intoXLOPER12());
             } else if (T == *xl.XLOPER12) {
                 return result;
             } else {

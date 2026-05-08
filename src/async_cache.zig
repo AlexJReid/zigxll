@@ -8,6 +8,7 @@
 const std = @import("std");
 const xl_imports = @import("xl_imports.zig");
 const xl = xl_imports.xl;
+const xl_helpers = @import("xl_helpers.zig");
 
 const allocator = std.heap.c_allocator;
 
@@ -57,14 +58,21 @@ pub const AsyncCache = struct {
 
         // If key already exists, just update the value
         if (self.map.getEntry(key)) |entry| {
+            if (entry.value_ptr.xloper != result.xloper) {
+                xl_helpers.destroyDllOwnedXloper(allocator, entry.value_ptr.xloper);
+            }
             entry.value_ptr.* = result;
             return;
         }
 
         // New key — dupe it so the cache owns the string
-        const owned_key = allocator.dupe(u8, key) catch return;
+        const owned_key = allocator.dupe(u8, key) catch {
+            xl_helpers.destroyDllOwnedXloper(allocator, result.xloper);
+            return;
+        };
         self.map.put(owned_key, result) catch {
             allocator.free(owned_key);
+            xl_helpers.destroyDllOwnedXloper(allocator, result.xloper);
         };
     }
 
@@ -74,6 +82,7 @@ pub const AsyncCache = struct {
         defer self.unlock();
         var it = self.map.iterator();
         while (it.next()) |entry| {
+            xl_helpers.destroyDllOwnedXloper(allocator, entry.value_ptr.xloper);
             allocator.free(@constCast(entry.key_ptr.*));
         }
         self.map.clearAndFree();

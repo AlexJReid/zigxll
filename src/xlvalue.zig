@@ -101,8 +101,16 @@ pub const XLValue = struct {
     }
 
     pub fn fromMatrix(allocator: std.mem.Allocator, data: []const []const f64) !XLValue {
+        if (data.len > std.math.maxInt(i32)) return error.MatrixTooLarge;
+
+        const cols = if (data.len > 0) data[0].len else 0;
+        if (cols > std.math.maxInt(i32)) return error.MatrixTooLarge;
+        for (data) |row| {
+            if (row.len != cols) return error.RaggedMatrix;
+        }
+
         const num_rows: i32 = @intCast(data.len);
-        const num_cols: i32 = if (data.len > 0) @intCast(data[0].len) else 0;
+        const num_cols: i32 = @intCast(cols);
 
         // Allocate multi array - be explicit about the type
         const array_size = @as(usize, @intCast(num_rows)) * @as(usize, @intCast(num_cols));
@@ -312,16 +320,17 @@ pub const XLValue = struct {
         const num_cols = self.columns();
 
         var result = try self.allocator.alloc([]const f64, num_rows);
+        var initialized_rows: usize = 0;
         errdefer {
-            for (result, 0..) |row, i| {
-                if (i > 0) self.allocator.free(row);
+            for (result[0..initialized_rows]) |row| {
+                self.allocator.free(row);
             }
             self.allocator.free(result);
         }
 
         for (0..num_rows) |r| {
             var row = try self.allocator.alloc(f64, num_cols);
-            errdefer if (r > 0) self.allocator.free(row);
+            errdefer self.allocator.free(row);
 
             for (0..num_cols) |c| {
                 const cell = try self.get_cell(r, c);
@@ -342,6 +351,7 @@ pub const XLValue = struct {
             }
 
             result[r] = row;
+            initialized_rows += 1;
         }
 
         return result;
@@ -356,20 +366,42 @@ pub const XLValue = struct {
         return &self.m_val;
     }
 
+    pub fn intoXLOPER12(self: *XLValue) xl.XLOPER12 {
+        const result = self.m_val;
+        self.m_owns_memory = false;
+        return result;
+    }
+
     // Cleanup
+    fn baseType(xltype: @TypeOf(@as(xl.XLOPER12, undefined).xltype)) @TypeOf(@as(xl.XLOPER12, undefined).xltype) {
+        return xltype & 0xFFF;
+    }
+
+    fn free_xloper_payload(self: *XLValue, oper: *xl.XLOPER12) void {
+        switch (baseType(oper.xltype)) {
+            xl.xltypeStr => {
+                const str_ptr = oper.val.str;
+                const len = @as(usize, @intCast(str_ptr[0]));
+                self.allocator.free(str_ptr[0 .. len + 2]);
+            },
+            xl.xltypeMulti => {
+                const rows_count = @as(usize, @intCast(oper.val.array.rows));
+                const cols_count = @as(usize, @intCast(oper.val.array.columns));
+                const total = rows_count * cols_count;
+                const cells = oper.val.array.lparray[0..total];
+                for (cells) |*cell| {
+                    self.free_xloper_payload(cell);
+                }
+                self.allocator.free(cells);
+            },
+            else => {},
+        }
+    }
+
     fn free_memory(self: *XLValue) void {
         if (!self.m_owns_memory) return;
 
-        if (self.is_str()) {
-            const str_ptr = self.m_val.val.str;
-            const len = @as(usize, @intCast(str_ptr[0]));
-            self.allocator.free(str_ptr[0 .. len + 2]); // Pascal string: 1 wchar for length prefix + len wchars for data + 1 null terminator
-        } else if (self.is_multi()) {
-            const rows_count = @as(usize, @intCast(self.m_val.val.array.rows));
-            const cols_count = @as(usize, @intCast(self.m_val.val.array.columns));
-            const total = rows_count * cols_count;
-            self.allocator.free(self.m_val.val.array.lparray[0..total]);
-        }
+        self.free_xloper_payload(&self.m_val);
 
         self.m_owns_memory = false;
     }
@@ -760,6 +792,55 @@ test "fromXLOPER12 with raw multi array (with ownership)" {
 
     const cell = try val.get_cell(1, 1);
     try std.testing.expectEqual(@as(f64, 40.0), try cell.as_double());
+}
+
+test "fromXLOPER12 owned multi frees nested string cells" {
+    const allocator = std.testing.allocator;
+
+    var first = try allocator.alloc(u16, 4);
+    first[0] = 2;
+    first[1] = 'o';
+    first[2] = 'k';
+    first[3] = 0;
+
+    var second = try allocator.alloc(u16, 5);
+    second[0] = 3;
+    second[1] = 'y';
+    second[2] = 'e';
+    second[3] = 's';
+    second[4] = 0;
+
+    var cells = try allocator.alloc(xl.XLOPER12, 2);
+    cells[0] = .{ .xltype = xl.xltypeStr, .val = .{ .str = first.ptr } };
+    cells[1] = .{ .xltype = xl.xltypeStr, .val = .{ .str = second.ptr } };
+
+    const raw: xl.XLOPER12 = .{
+        .xltype = xl.xltypeMulti,
+        .val = .{ .array = .{
+            .lparray = cells.ptr,
+            .rows = 1,
+            .columns = 2,
+        } },
+    };
+
+    var val = XLValue.fromXLOPER12(allocator, raw, true);
+    defer val.deinit();
+
+    try std.testing.expect(val.is_multi());
+}
+
+test "fromMatrix rejects ragged rows" {
+    const allocator = std.testing.allocator;
+
+    try std.testing.expectError(error.RaggedMatrix, XLValue.fromMatrix(allocator, &.{
+        &.{ 1.0, 2.0 },
+        &.{ 3.0, 4.0, 5.0 },
+    }));
+
+    try std.testing.expectError(error.RaggedMatrix, XLValue.fromMatrix(allocator, &.{
+        &.{ 1.0, 2.0 },
+        &.{3.0},
+    }));
 }
 
 test "fromXLOPER12 with mixed type array" {

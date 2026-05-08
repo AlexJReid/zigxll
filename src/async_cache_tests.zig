@@ -14,10 +14,6 @@ fn makeNumericXloper(val: f64) *xl.XLOPER12 {
     return ptr;
 }
 
-fn freeXloper(ptr: *xl.XLOPER12) void {
-    allocator.destroy(ptr);
-}
-
 test "cache miss returns null" {
     var cache = async_cache.AsyncCache.init();
     defer cache.clear();
@@ -30,7 +26,6 @@ test "put and get" {
     defer cache.clear();
 
     const xloper = makeNumericXloper(42.0);
-    defer freeXloper(xloper);
 
     cache.put("key1", .{ .xloper = xloper, .completed = true });
 
@@ -45,9 +40,7 @@ test "put overwrites existing key" {
     defer cache.clear();
 
     const xloper1 = makeNumericXloper(1.0);
-    defer freeXloper(xloper1);
     const xloper2 = makeNumericXloper(2.0);
-    defer freeXloper(xloper2);
 
     cache.put("key", .{ .xloper = xloper1, .completed = false });
     cache.put("key", .{ .xloper = xloper2, .completed = true });
@@ -63,7 +56,6 @@ test "contains" {
     defer cache.clear();
 
     const xloper = makeNumericXloper(0.0);
-    defer freeXloper(xloper);
 
     try std.testing.expect(!cache.contains("key"));
     cache.put("key", .{ .xloper = xloper, .completed = false });
@@ -74,9 +66,7 @@ test "clear removes all entries" {
     var cache = async_cache.AsyncCache.init();
 
     const xloper1 = makeNumericXloper(1.0);
-    defer freeXloper(xloper1);
     const xloper2 = makeNumericXloper(2.0);
-    defer freeXloper(xloper2);
 
     cache.put("a", .{ .xloper = xloper1, .completed = true });
     cache.put("b", .{ .xloper = xloper2, .completed = true });
@@ -92,9 +82,7 @@ test "in-progress then completed" {
     defer cache.clear();
 
     const pending = makeNumericXloper(0.0);
-    defer freeXloper(pending);
     const done = makeNumericXloper(99.0);
-    defer freeXloper(done);
 
     // Mark in-progress
     cache.put("calc|5", .{ .xloper = pending, .completed = false });
@@ -113,7 +101,6 @@ test "concurrent reads and writes" {
     defer cache.clear();
 
     const xloper = makeNumericXloper(42.0);
-    defer freeXloper(xloper);
     cache.put("shared", .{ .xloper = xloper, .completed = true });
 
     const Reader = struct {

@@ -154,12 +154,12 @@ pub fn LuaFunction(comptime meta: anytype) type {
                         return makeErrorValue();
                     }
                     const str = ptr.?[0..len];
-                    const xlval = XLValue.fromUtf8String(allocator, str) catch {
+                    var xlval = XLValue.fromUtf8String(allocator, str) catch {
                         lua.lua_pop(L, 1);
                         return makeErrorValue();
                     };
                     lua.lua_pop(L, 1);
-                    return heapXloper(xlval.m_val);
+                    return heapXloper(xlval.intoXLOPER12());
                 },
                 lua.LUA_TBOOLEAN => {
                     const b = lua.lua_toboolean(L, -1);
@@ -381,6 +381,7 @@ pub fn LuaFunction(comptime meta: anytype) type {
                 freeXloperCopies(&pack.xloper_copies);
                 allocator.free(pack.key);
                 allocator.destroy(pack);
+                async_infra.storeResult(key, makeErrorValue());
             }
 
             return rtd_result;
