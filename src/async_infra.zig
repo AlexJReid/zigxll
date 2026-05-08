@@ -315,14 +315,14 @@ fn asyncValueToXloper(val: AsyncValue) *xl.XLOPER12 {
             };
         },
         .string => |v| {
-            const xv = XLValue.fromUtf8String(allocator, v) catch {
+            var xv = XLValue.fromUtf8String(allocator, v) catch {
                 ptr.* = .{
                     .xltype = xl.xltypeErr | xl.xlbitDLLFree,
                     .val = .{ .err = xl.xlerrValue },
                 };
                 return ptr;
             };
-            ptr.* = xv.m_val;
+            ptr.* = xv.intoXLOPER12();
             ptr.xltype |= xl.xlbitDLLFree;
         },
     }
